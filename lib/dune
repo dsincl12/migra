@@ -1,0 +1,11 @@
+(library
+ (name migris)
+ (libraries
+   lwt
+   lwt.unix
+   caqti
+   caqti-lwt
+   caqti-lwt.unix
+   caqti-driver-postgresql
+   uri
+   unix))
