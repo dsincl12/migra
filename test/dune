@@ -12,3 +12,16 @@
  (modules test_unit test_sql_parser test_types test_migration test_discovery)
  (libraries test_helpers migris alcotest alcotest-lwt lwt lwt.unix)
  (preprocess (pps lwt_ppx)))
+
+; Integration tests - require PostgreSQL
+; Run with: dune build @runtest-integration
+(executable
+ (name test_integration)
+ (modules test_integration test_database test_runner test_schema_integration test_migrator test_e2e)
+ (libraries test_helpers migris alcotest alcotest-lwt lwt lwt.unix caqti caqti-lwt uri)
+ (preprocess (pps lwt_ppx)))
+
+; Custom alias for running integration tests
+(rule
+ (alias runtest-integration)
+ (action (run %{dep:test_integration.exe})))
