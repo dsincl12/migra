@@ -1,0 +1,14 @@
+; Shared test helpers
+(library
+ (name test_helpers)
+ (modules test_helpers)
+ (libraries migris alcotest lwt lwt.unix caqti caqti-lwt uri)
+ (preprocess (pps lwt_ppx)))
+
+; Unit tests - fast, no database required
+; Run with: dune runtest
+(test
+ (name test_unit)
+ (modules test_unit test_sql_parser test_types test_migration test_discovery)
+ (libraries test_helpers migris alcotest alcotest-lwt lwt lwt.unix)
+ (preprocess (pps lwt_ppx)))
