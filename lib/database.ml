@@ -165,7 +165,8 @@ let create_database (database_url : string) : (unit, Types.error) Lwt_result.t =
 
       (* SQLite: file will be created by Caqti on first connect *)
       if dialect = Dialect.SQLite then
-        let uri = Uri.of_string database_url in
+        let normalized_url = Dialect.normalize_url database_url in
+        let uri = Uri.of_string normalized_url in
         let path = Uri.path uri in
         if path = ":memory:" then
           Lwt.return_ok ()  (* In-memory DB, always succeeds *)
@@ -218,7 +219,9 @@ let drop_database (database_url : string) : (unit, Types.error) Lwt_result.t =
 
       (* SQLite: delete the file *)
       if dialect = Dialect.SQLite then
-        let uri = Uri.of_string database_url in
+        (* Normalize URL before parsing (sqlite3:// -> sqlite3:) *)
+        let normalized_url = Dialect.normalize_url database_url in
+        let uri = Uri.of_string normalized_url in
         let path = Uri.path uri in
         if path = ":memory:" then
           Lwt.return_ok ()  (* In-memory DB, nothing to drop *)
