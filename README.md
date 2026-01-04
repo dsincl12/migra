@@ -37,32 +37,112 @@ Write plain SQL migrations with up/down sections. Run them with transaction safe
 
 **Prerequisites:** OCaml ≥ 5.0, Opam ≥ 2.0, Dune ≥ 2.7
 
-**Database Prerequisites (at least one required):**
-- PostgreSQL ≥ 13 (for PostgreSQL support)
-- MariaDB/MySQL ≥ 5.7 (for MariaDB/MySQL support)
-- SQLite ≥ 3.0 (for SQLite support - included with most systems)
+### Quick Start
+
+**Migra uses Caqti's dynamic driver loading** - install only the database driver(s) you need:
 
 ```bash
-# Install system dependencies for PostgreSQL (macOS)
+# 1. Install Migra CLI
+opam install migra
+
+# 2. Install driver for your database
+# PostgreSQL:
+opam install caqti-driver-postgresql
+
+# OR MariaDB/MySQL:
+opam install caqti-driver-mariadb
+
+# OR SQLite:
+opam install caqti-driver-sqlite3
+
+# 3. Use it!
+export DATABASE_URL="sqlite3://./dev.db"
+migra init
+migra generate create_users
+migra migrate
+```
+
+**System dependencies:**
+
+If using PostgreSQL or MariaDB, install system libraries first:
+
+```bash
+# PostgreSQL (macOS)
+brew install libpq pkg-config
+export PKG_CONFIG_PATH="/opt/homebrew/opt/libpq/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+# MariaDB (macOS)
+brew install mariadb-connector-c
+
+# SQLite - no system dependencies needed!
+```
+
+### CLI Installation Options
+
+**PostgreSQL only:**
+```bash
+brew install libpq pkg-config
+export PKG_CONFIG_PATH="/opt/homebrew/opt/libpq/lib/pkgconfig:$PKG_CONFIG_PATH"
+opam install migra caqti-driver-postgresql
+```
+
+**SQLite only (easiest for development):**
+```bash
+opam install migra caqti-driver-sqlite3
+# No system dependencies!
+```
+
+**MariaDB/MySQL only:**
+```bash
+brew install mariadb-connector-c
+opam install migra caqti-driver-mariadb
+```
+
+**All databases:**
+```bash
+brew install libpq mariadb-connector-c pkg-config
+export PKG_CONFIG_PATH="/opt/homebrew/opt/libpq/lib/pkgconfig:$PKG_CONFIG_PATH"
+opam install migra caqti-driver-postgresql caqti-driver-mariadb caqti-driver-sqlite3
+```
+
+### Using as a Library
+
+Same approach - install only what you need:
+
+**PostgreSQL only:**
+```bash
+# System dependencies (macOS)
 brew install postgresql libpq pkg-config
 export PKG_CONFIG_PATH="/opt/homebrew/opt/libpq/lib/pkgconfig:$PKG_CONFIG_PATH"
 
-# Install system dependencies for MariaDB (macOS)
+# Install driver + migra
+opam install caqti-driver-postgresql migra
+```
+
+**MariaDB/MySQL only:**
+```bash
+# System dependencies (macOS)
 brew install mariadb-connector-c
 
-# SQLite support - no additional system dependencies needed!
-
-# Install OCaml dependencies (includes all three database drivers)
-opam install lwt caqti caqti-lwt caqti-driver-postgresql caqti-driver-mariadb caqti-driver-sqlite3 uri cmdliner
-
-# Build Migra
-git clone <your-repo-url>
-cd migra
-dune build
-
-# Optional: create alias
-alias migra="_build/default/bin/main.exe"
+# Install driver + migra
+opam install caqti-driver-mariadb migra
 ```
+
+**SQLite only:**
+```bash
+# No system dependencies needed on most systems!
+
+# Install driver + migra
+opam install caqti-driver-sqlite3 migra
+```
+
+**Multiple databases:**
+```bash
+# Install only what you need
+opam install caqti-driver-postgresql caqti-driver-sqlite3 migra
+```
+
+Migra uses Caqti's dynamic driver loading - you only need to install drivers for the databases you'll actually use.
 
 ## Supported Databases
 
@@ -109,10 +189,9 @@ migra init
 # Creating database: myapp
 # Database 'myapp' created successfully
 #
-# Run 'migra migrate' to apply migrations
 
 # 3. Create your first migration
-migra create create_users_table
+migra generate create_users_table
 # Creating migrations/20240115120000_create_users_table.sql
 ```
 
@@ -125,9 +204,10 @@ export DATABASE_URL="sqlite3://./dev.db"
 migra init
 # Creating database: ./dev.db
 # Database './dev.db' created successfully
+#
 
 # 3. Create your first migration
-migra create create_users_table
+migra generate create_users_table
 # Creating migrations/20240115120000_create_users_table.sql
 ```
 
@@ -140,9 +220,10 @@ export DATABASE_URL="mariadb://root@localhost:3306/myapp"
 migra init
 # Creating database: myapp
 # Database 'myapp' created successfully
+#
 
 # 3. Create your first migration
-migra create create_users_table
+migra generate create_users_table
 # Creating migrations/20240115120000_create_users_table.sql
 ```
 
@@ -199,7 +280,6 @@ migra init
 # Creating database: myapp
 # Database 'myapp' created successfully
 #
-# Run 'migra migrate' to apply migrations
 ```
 
 **Create database and run all migrations:**
@@ -242,7 +322,7 @@ migra reset
 
 **Create new migration:**
 ```bash
-migra create add_email_to_users
+migra generate add_email_to_users
 # Creating migrations/20240115130000_add_email_to_users.sql
 ```
 
@@ -379,7 +459,7 @@ migra init
 # Database 'blog' created successfully
 
 # Create migration
-migra create create_posts_table
+migra generate create_posts_table
 # Creating migrations/20240115120000_create_posts_table.sql
 
 # Edit the file
@@ -402,7 +482,7 @@ migra migrate
 # == Migrated 20240115120000 in 0.045s
 
 # Create another migration
-migra create add_published_flag
+migra generate add_published_flag
 # Creating migrations/20240115130000_add_published_flag.sql
 
 # Edit it
@@ -503,11 +583,13 @@ Migra can be embedded in your OCaml applications for programmatic migration cont
 
 ### Installation
 
+**Important:** Migra uses Caqti's dynamic driver loading. You must install the database driver(s) you need separately.
+
 Add to your `dune` file:
 ```dune
 (executable
  (name my_app)
- (libraries migra))
+ (libraries migra caqti-driver-postgresql))  ; Add only the drivers you need
 ```
 
 Or in `dune-project`:
@@ -515,8 +597,16 @@ Or in `dune-project`:
 (package
  (name my_app)
  (depends
-   (migra (>= 0.1.0))))
+   (migra (>= 0.1.0))
+   (caqti-driver-postgresql (>= 2.0.0))))  ; Install only what you use
 ```
+
+**Available drivers:**
+- `caqti-driver-postgresql` - For PostgreSQL
+- `caqti-driver-mariadb` - For MariaDB/MySQL
+- `caqti-driver-sqlite3` - For SQLite
+
+You can install multiple drivers if your app supports multiple databases.
 
 ### Basic Usage
 

@@ -33,13 +33,55 @@ let get_database_url () : (string, Types.error) result =
   | Some url -> Ok url
   | None -> Error (Types.DatabaseError (Types.ParseError "DATABASE_URL environment variable not set"))
 
+let string_contains (haystack : string) (needle : string) : bool =
+  try
+    let _ = Str.search_forward (Str.regexp_string needle) haystack 0 in
+    true
+  with Not_found -> false
+
+let improve_driver_error (database_url : string) (err : Caqti_error.t) : string =
+  let err_msg = Caqti_error.show err in
+  (* Check if it's a "driver not found" error *)
+  if string_contains err_msg "suitable driver" || string_contains err_msg "not found" then
+    let uri = Uri.of_string database_url in
+    let scheme = Uri.scheme uri |> Option.value ~default:"unknown" in
+    let driver_name, install_cmd = match scheme with
+      | "postgresql" | "postgres" ->
+          ("PostgreSQL", "opam install caqti-driver-postgresql")
+      | "mariadb" | "mysql" ->
+          ("MariaDB/MySQL", "opam install caqti-driver-mariadb")
+      | "sqlite3" ->
+          ("SQLite", "opam install caqti-driver-sqlite3")
+      | other ->
+          (other, Printf.sprintf "Unknown database scheme: %s" other)
+    in
+    Printf.sprintf
+      "No database driver found for '%s://'\n\n\
+       The %s driver is not installed. To fix this:\n  \
+       %s\n\n\
+       Available drivers:\n  \
+       - caqti-driver-postgresql  (for postgresql://)\n  \
+       - caqti-driver-mariadb     (for mariadb://, mysql://)\n  \
+       - caqti-driver-sqlite3     (for sqlite3://)"
+      scheme driver_name install_cmd
+  else
+    (* Not a driver error, show original Caqti error *)
+    err_msg
+
 (** Connect to database using connection string
     Returns a single connection (use for one-off operations or transactions)
 *)
 let connect_db (database_url : string) : ((Types.db_conn, Types.error) result) Lwt.t =
   Caqti_lwt_unix.connect (Uri.of_string database_url) >|= function
   | Ok conn -> Ok (conn :> Types.db_conn)
-  | Error err -> Error (Types.DatabaseError (Types.ConnectionFailed ("connect_db", err)))
+  | Error err ->
+      (* Check if this is a "driver not found" error and improve the message *)
+      let err_msg = Caqti_error.show err in
+      if string_contains err_msg "suitable driver" || string_contains err_msg "not found" then
+        let improved_msg = improve_driver_error database_url err in
+        Error (Types.DatabaseError (Types.ParseError improved_msg))
+      else
+        Error (Types.DatabaseError (Types.ConnectionFailed ("connect_db", err)))
 
 (** Connect to database and execute a function, then close connection
 

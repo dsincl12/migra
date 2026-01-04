@@ -24,12 +24,12 @@ let require_database_url () =
       Printf.eprintf "Example: export DATABASE_URL=\"postgresql://user@localhost:5432/myapp\"\n";
       exit 1
 
-(* Create command *)
-let create_cmd =
+(* Generate command *)
+let generate_cmd =
   let name = Arg.(required & pos 0 (some string) None & info [] ~docv:"NAME" ~doc:"Migration name") in
   let run name = run_lwt (fun () -> Commands.create name) in
-  let doc = "Create a new migration file" in
-  let info = Cmd.info "create" ~doc in
+  let doc = "Generate a new migration file" in
+  let info = Cmd.info "generate" ~doc in
   Cmd.v info Term.(const run $ name)
 
 (* Migrate command *)
@@ -145,7 +145,7 @@ let main_cmd =
   let doc = "Simple database migration tool for OCaml" in
   let sdocs = Manpage.s_common_options in
   let info = Cmd.info "migra" ~version:"0.1.0" ~doc ~sdocs in
-  Cmd.group info [create_cmd; drop_cmd; init_cmd; migrate_cmd; reset_cmd; rollback_cmd; setup_cmd; status_cmd]
+  Cmd.group info [generate_cmd; drop_cmd; init_cmd; migrate_cmd; reset_cmd; rollback_cmd; setup_cmd; status_cmd]
 
 (* Entry point *)
 let () = exit (Cmd.eval main_cmd)

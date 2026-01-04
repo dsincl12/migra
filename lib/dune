@@ -6,8 +6,6 @@
    caqti
    caqti-lwt
    caqti-lwt.unix
-   caqti-driver-postgresql
-   caqti-driver-mariadb
-   caqti-driver-sqlite3
    uri
-   unix))
+   unix
+   str))

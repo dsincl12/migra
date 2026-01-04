@@ -25,11 +25,12 @@
    (alcotest-lwt (and :with-test (>= 1.7.0)))
    (caqti (>= 2.0.0))
    (caqti-lwt (>= 2.0.0))
-   (caqti-driver-postgresql (>= 2.0.0))
-   (caqti-driver-mariadb (>= 2.0.0))
-   (caqti-driver-sqlite3 (>= 2.0.0))
    (uri (>= 4.4.0))
    (cmdliner (>= 1.2.0)))
+ (depopts
+   caqti-driver-postgresql
+   caqti-driver-mariadb
+   caqti-driver-sqlite3)
  (tags
   (topics database migrations postgresql mariadb mysql sqlite)))
 

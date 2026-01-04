@@ -1,4 +1,4 @@
-# Migris Test Suite
+# Migra Test Suite
 
 The test suite is split into **unit tests** and **integration tests** for fast feedback during development.
 

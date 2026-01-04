@@ -1,4 +1,4 @@
-(** CLI command implementations for Migris. *)
+(** CLI command implementations for Migra. *)
 
 (** Create a new migration file
 

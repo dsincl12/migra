@@ -153,8 +153,7 @@ let init database_url =
           Lwt_io.eprintlf "Failed to create database: %s" (Types.show_error err) >>= fun () ->
           exit 1
       | Ok () ->
-          Lwt_io.printlf "Database '%s' created successfully" db_name >>= fun () ->
-          Lwt_io.printl "\nRun 'migra migrate' to apply migrations"
+          Lwt_io.printlf "Database '%s' created successfully" db_name
 
 let setup migrations_dir verbose database_url =
   (* Show database type in verbose mode *)
@@ -199,7 +198,7 @@ let setup migrations_dir verbose database_url =
                     match pending with
                     | [] ->
                         Lwt_io.printl "No pending migrations" >>= fun () ->
-                        Lwt_io.printl "\nSetup complete! Create migrations with 'migra create <name>'"
+                        Lwt_io.printl "Setup complete!"
                     | _ ->
                         run_migrations_with_progress ~verbose db pending >>= fun results ->
                         let failed = List.filter (fun r -> not (Runner.is_success r)) results in
@@ -278,7 +277,7 @@ let reset migrations_dir verbose database_url =
                         match pending with
                         | [] ->
                             Lwt_io.printl "No pending migrations" >>= fun () ->
-                            Lwt_io.printl "\nReset complete! Create migrations with 'migra create <name>'"
+                            Lwt_io.printl "Reset complete!"
                         | _ ->
                             run_migrations_with_progress ~verbose db pending >>= fun results ->
                             let failed = List.filter (fun r -> not (Runner.is_success r)) results in

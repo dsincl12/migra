@@ -740,7 +740,7 @@ Error: Invalid migration file format
 **Solution:**
 ```bash
 # Create migration properly:
-migra create my_migration_name
+migra generate my_migration_name
 
 # Ensure file has both sections:
 -- +migrate up
