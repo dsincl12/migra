@@ -41,7 +41,6 @@ let string_contains (haystack : string) (needle : string) : bool =
 
 let improve_driver_error (database_url : string) (err : Caqti_error.t) : string =
   let err_msg = Caqti_error.show err in
-  (* Check if it's a "driver not found" error *)
   if string_contains err_msg "suitable driver" || string_contains err_msg "not found" then
     let uri = Uri.of_string database_url in
     let scheme = Uri.scheme uri |> Option.value ~default:"unknown" in
@@ -65,19 +64,16 @@ let improve_driver_error (database_url : string) (err : Caqti_error.t) : string 
        - caqti-driver-sqlite3     (for sqlite3://)"
       scheme driver_name install_cmd
   else
-    (* Not a driver error, show original Caqti error *)
     err_msg
 
 (** Connect to database using connection string
     Returns a single connection (use for one-off operations or transactions)
 *)
 let connect_db (database_url : string) : ((Types.db_conn, Types.error) result) Lwt.t =
-  (* Normalize URL for Caqti compatibility (e.g., sqlite3:// -> sqlite3:) *)
   let normalized_url = Dialect.normalize_url database_url in
   Caqti_lwt_unix.connect (Uri.of_string normalized_url) >|= function
   | Ok conn -> Ok (conn :> Types.db_conn)
   | Error err ->
-      (* Check if this is a "driver not found" error and improve the message *)
       let err_msg = Caqti_error.show err in
       if string_contains err_msg "suitable driver" || string_contains err_msg "not found" then
         let improved_msg = improve_driver_error database_url err in
@@ -125,7 +121,6 @@ let get_admin_database_url (dialect : Dialect.t) (uri : Uri.t) : (string, Types.
           in
           let user_part = match userinfo with
             | Some info ->
-                (* Handle user:pass or just user *)
                 (match String.index_opt info ':' with
                  | Some idx -> String.sub info 0 idx
                  | None -> info)
@@ -163,17 +158,15 @@ let create_database (database_url : string) : (unit, Types.error) Lwt_result.t =
   | Ok dialect ->
       let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
 
-      (* SQLite: file will be created by Caqti on first connect *)
       if dialect = Dialect.SQLite then
         let normalized_url = Dialect.normalize_url database_url in
         let uri = Uri.of_string normalized_url in
         let path = Uri.path uri in
         if path = ":memory:" then
-          Lwt.return_ok ()  (* In-memory DB, always succeeds *)
+          Lwt.return_ok ()
         else
-          Lwt.return_ok ()  (* File will be created by Caqti on first connect *)
+          Lwt.return_ok ()
       else
-        (* Server-based databases: use admin connection *)
         let uri = Uri.of_string database_url in
         match get_database uri with
         | Error err -> Lwt.return_error err
@@ -186,7 +179,6 @@ let create_database (database_url : string) : (unit, Types.error) Lwt_result.t =
                 | Ok db ->
                     let module Conn = (val db : Caqti_lwt.CONNECTION) in
 
-                    (* Check if database exists *)
                     let check_query = (string ->! bool) D.database_exists_sql in
                     Conn.find check_query db_name >>= function
                     | Error err ->
@@ -217,16 +209,13 @@ let drop_database (database_url : string) : (unit, Types.error) Lwt_result.t =
   | Ok dialect ->
       let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
 
-      (* SQLite: delete the file *)
       if dialect = Dialect.SQLite then
-        (* Normalize URL before parsing (sqlite3:// -> sqlite3:) *)
         let normalized_url = Dialect.normalize_url database_url in
         let uri = Uri.of_string normalized_url in
         let path = Uri.path uri in
         if path = ":memory:" then
-          Lwt.return_ok ()  (* In-memory DB, nothing to drop *)
+          Lwt.return_ok ()
         else
-          (* Delete SQLite file if it exists *)
           Lwt.catch
             (fun () ->
               if Sys.file_exists path then
@@ -239,7 +228,6 @@ let drop_database (database_url : string) : (unit, Types.error) Lwt_result.t =
                 (Printf.sprintf "Failed to delete SQLite file: %s" (Printexc.to_string exn))))
             )
       else
-        (* Server-based databases *)
         let uri = Uri.of_string database_url in
         match get_database uri with
         | Error err -> Lwt.return_error err

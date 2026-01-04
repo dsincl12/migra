@@ -43,7 +43,6 @@ type rollback_strategy =
 (** Connect to database, initialize schema, run function
     The callback function receives both the database connection and dialect *)
 let with_initialized_db database_url f =
-  (* Detect dialect from database_url *)
   match Dialect.detect_from_url database_url with
   | Error msg -> Lwt.fail_with msg
   | Ok dialect ->
@@ -121,11 +120,9 @@ let make_operation_result (results : migration_result list) : operation_result =
 
 let run (config : config) =
   with_initialized_db config.database_url (fun _dialect db ->
-    (* Discover all migrations *)
     match Discovery.find_migrations ~dir:config.migrations_dir () with
     | Error err -> Lwt.return_error err
     | Ok all_migrations ->
-        (* Get applied versions *)
         Runner.get_applied_versions db >>= function
         | Error err ->
             Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" err)
@@ -140,7 +137,6 @@ let run (config : config) =
 
 let rollback (config : config) strategy =
   with_initialized_db config.database_url (fun _dialect db ->
-    (* Get applied versions *)
     Runner.get_applied_versions db >>= function
     | Error err ->
         Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" err)
@@ -148,17 +144,14 @@ let rollback (config : config) strategy =
         if List.length applied_versions = 0 then
           Lwt.return_ok (make_operation_result [])
         else
-          (* Discover all migrations *)
           match Discovery.find_migrations ~dir:config.migrations_dir () with
           | Error err -> Lwt.return_error err
           | Ok all_migrations ->
-              (* Build set of applied versions *)
               let applied_set = Discovery.applied_set_of_list applied_versions in
               let applied_migrations = List.filter
                 (fun m -> Discovery.Int64Set.mem m.Migration.version applied_set)
                 all_migrations in
 
-              (* Determine which migrations to rollback *)
               let to_rollback = match strategy with
                 | All -> applied_migrations
                 | To target ->
@@ -181,19 +174,16 @@ let rollback (config : config) strategy =
 
 let status (cfg : config) =
   with_initialized_db cfg.database_url (fun dialect db ->
-    (* Get applied records (with timestamps) *)
     Runner.get_applied_records dialect db >>= function
     | Error err ->
         Lwt.return_error (Types.of_caqti_error ~context:"get applied migrations" err)
     | Ok applied_records ->
-        (* Build map of version -> timestamp *)
         let applied_map = List.fold_left
           (fun acc record -> (record.Runner.version, record.Runner.created_at) :: acc)
           [] applied_records in
         let applied_set = Discovery.applied_set_of_list
           (List.map (fun r -> r.Runner.version) applied_records) in
 
-        (* Find all migrations *)
         match Discovery.find_migrations ~dir:cfg.migrations_dir () with
         | Error err -> Lwt.return_error err
         | Ok migrations ->

@@ -34,14 +34,12 @@ let find_migrations ?(dir = default_migrations_dir) () : (Migration.t list, Type
   match read_directory dir with
   | Error e -> Error e
   | Ok files ->
-      (* Filter for migration files and create full paths *)
       let migration_files =
         files
         |> List.filter is_migration_file
         |> List.map (fun f -> Filename.concat dir f)
       in
 
-      (* Parse each migration file *)
       let rec parse_all acc = function
         | [] -> Ok (List.rev acc)
         | file :: rest ->
@@ -53,7 +51,6 @@ let find_migrations ?(dir = default_migrations_dir) () : (Migration.t list, Type
       match parse_all [] migration_files with
       | Error e -> Error e
       | Ok migrations ->
-          (* Sort by version (chronological order) *)
           let sorted = List.sort Migration.compare migrations in
           Ok sorted
 
@@ -62,10 +59,8 @@ let find_migrations ?(dir = default_migrations_dir) () : (Migration.t list, Type
     returns migrations that haven't been applied yet.
 *)
 let find_pending (applied_versions : int64 list) (all_migrations : Migration.t list) : Migration.t list =
-  (* Convert applied versions to a set for O(1) lookup *)
   let applied_set = applied_set_of_list applied_versions in
 
-  (* Filter out migrations that have been applied *)
   List.filter (fun (migration : Migration.t) ->
     not (Int64Set.mem migration.Migration.version applied_set)
   ) all_migrations

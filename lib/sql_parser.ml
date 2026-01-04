@@ -39,7 +39,6 @@ let split_sql (sql : string) : string list =
     Buffer.clear buf
   in
 
-  (* State machine: track if we're inside a string literal *)
   let rec split_statements quote_state i =
     if i >= String.length sql then
       finish_statement ()
@@ -47,27 +46,21 @@ let split_sql (sql : string) : string list =
       let c = sql.[i] in
       match quote_state, c with
       | NotInQuote, ('\'' | '"') ->
-          (* Start of string literal *)
           Buffer.add_char buf c;
           split_statements (InQuote c) (i + 1)
       | InQuote q, c' when c' = q ->
-          (* Potential end of string - check for escape *)
           if i + 1 < String.length sql && sql.[i + 1] = q then begin
-            (* Escaped quote (e.g., '' or "") - include both *)
             Buffer.add_char buf c;
             Buffer.add_char buf q;
             split_statements (InQuote q) (i + 2)
           end else begin
-            (* End of string literal *)
             Buffer.add_char buf c;
             split_statements NotInQuote (i + 1)
           end
       | NotInQuote, ';' ->
-          (* Statement separator outside string *)
           finish_statement ();
           split_statements NotInQuote (i + 1)
       | _, _ ->
-          (* Regular character *)
           Buffer.add_char buf c;
           split_statements quote_state (i + 1)
   in
@@ -75,7 +68,6 @@ let split_sql (sql : string) : string list =
   split_statements NotInQuote 0;
   List.rev !statements
   |> List.filter (fun s ->
-      (* Filter out comment-only statements *)
       let lines = String.split_on_char '\n' s in
       let sql_lines = List.filter (fun line ->
         let trimmed = String.trim line in

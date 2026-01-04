@@ -151,10 +151,8 @@ let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) : (unit, 
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   let open Lwt.Infix in
 
-  (* Split SQL into individual statements *)
   let statements = Sql_parser.split_sql sql in
 
-  (* Execute each statement *)
   let rec exec_all = function
     | [] -> Lwt_result.return ()
     | stmt :: rest ->
@@ -172,15 +170,12 @@ let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) : (unit, 
     On failure: transaction rolls back, nothing is recorded
 *)
 let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
-  (* Read the up SQL content from the migration file *)
   (* Note: File read errors return immediately WITHOUT starting a transaction.
      SQL execution errors occur WITHIN a transaction and trigger rollback. *)
   match Migration.read_up_sql migration with
   | Error err ->
-      (* File read error - return immediately without touching DB *)
       Lwt.return (Failure (migration, err))
   | Ok sql_content ->
-      (* Execute within a transaction *)
       let module Db = (val db : Caqti_lwt.CONNECTION) in
       let open Lwt.Syntax in
 
@@ -192,7 +187,6 @@ let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration
         Lwt.return (Failure (migration, err))
       in
 
-      (* Use monadic bind to flatten nested matching *)
       let* () = log_verbose verbose (Printf.sprintf "Starting migration %Ld" migration.Migration.version) in
       let* start_result = Db.start () in
       match start_result with
@@ -221,13 +215,10 @@ let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration
     On failure: transaction rolls back, nothing is changed
 *)
 let rollback_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
-  (* Read the down SQL content from the migration file *)
   match Migration.read_down_sql migration with
   | Error err ->
-      (* File read error or missing down section - return immediately *)
       Lwt.return (Failure (migration, err))
   | Ok sql_content ->
-      (* Execute within a transaction *)
       let module Db = (val db : Caqti_lwt.CONNECTION) in
       let open Lwt.Syntax in
 
@@ -239,7 +230,6 @@ let rollback_migration ?(verbose = false) (db : Types.db_conn) (migration : Migr
         Lwt.return (Failure (migration, err))
       in
 
-      (* Use monadic bind to flatten nested matching *)
       let* () = log_verbose verbose (Printf.sprintf "Starting rollback of migration %Ld" migration.Migration.version) in
       let* start_result = Db.start () in
       match start_result with
@@ -277,7 +267,6 @@ let run_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migrati
          | Success _ ->
              run_all (result :: acc) rest
          | Failure _ ->
-             (* Stop on first failure *)
              Lwt.return (List.rev (result :: acc)))
   in
 
@@ -293,19 +282,15 @@ let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string
     : (execution_result list, Types.error) Lwt_result.t =
   let open Lwt.Infix in
 
-  (* Discover all migration files *)
   match Discovery.find_migrations ~dir:migrations_dir () with
   | Error err -> Lwt.return_error err
   | Ok all_migrations ->
-      (* Get applied versions from database *)
       get_applied_versions db >>= function
       | Error caqti_err ->
           Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" caqti_err)
       | Ok applied_versions ->
-          (* Find pending migrations *)
           let pending = Discovery.find_pending applied_versions all_migrations in
 
-          (* Execute pending migrations *)
           run_migrations ~verbose db pending >|= fun results ->
           Ok results
 
@@ -315,7 +300,6 @@ let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string
 let rollback_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
   let open Lwt.Syntax in
 
-  (* Sort migrations in reverse chronological order (newest first) *)
   let sorted = List.sort (fun a b -> Int64.compare b.Migration.version a.Migration.version) migrations in
 
   let rec rollback_all acc = function
@@ -326,7 +310,6 @@ let rollback_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Mi
          | Success _ ->
              rollback_all (result :: acc) rest
          | Failure _ ->
-             (* Stop on first failure *)
              Lwt.return (List.rev (result :: acc)))
   in
 
@@ -344,17 +327,14 @@ let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrat
   if step <= 0 then
     Lwt.return_error (Types.DatabaseError (Types.ParseError "Step must be a positive number"))
   else
-    (* Get applied versions from database *)
     get_applied_versions db >>= function
     | Error caqti_err ->
         Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
     | Ok [] -> Lwt.return_ok []
     | Ok applied_versions ->
-        (* Discover all migration files *)
         match Discovery.find_migrations ~dir:migrations_dir () with
         | Error err -> Lwt.return_error err
         | Ok all_migrations ->
-            (* Filter to only applied migrations *)
             let applied_set = List.fold_left
               (fun set v -> Discovery.Int64Set.add v set)
               Discovery.Int64Set.empty
@@ -365,11 +345,9 @@ let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrat
                 all_migrations
               in
 
-              (* Sort in reverse chronological order and take N *)
               let sorted = List.sort (fun a b -> Int64.compare b.Migration.version a.Migration.version) applied_migrations in
               let to_rollback = List.filteri (fun i _ -> i < step) sorted in
 
-              (* Rollback migrations *)
               rollback_migrations ~verbose db to_rollback >|= fun results ->
               Ok results
 
@@ -385,11 +363,9 @@ let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migratio
   | Error caqti_err ->
       Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
   | Ok applied_versions ->
-      (* Discover all migration files *)
       match Discovery.find_migrations ~dir:migrations_dir () with
       | Error err -> Lwt.return_error err
       | Ok all_migrations ->
-          (* Filter to only applied migrations newer than target *)
           let applied_set = List.fold_left
             (fun set v -> Discovery.Int64Set.add v set)
             Discovery.Int64Set.empty
@@ -405,7 +381,6 @@ let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migratio
           match to_rollback with
           | [] -> Lwt.return_ok []
           | _ ->
-              (* Rollback migrations *)
               rollback_migrations ~verbose db to_rollback >|= fun results ->
               Ok results
 
@@ -419,11 +394,9 @@ let rollback_all ?(verbose = false) ?(migrations_dir = Discovery.default_migrati
       Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
   | Ok [] -> Lwt.return_ok []
   | Ok applied_versions ->
-      (* Discover all migration files *)
       match Discovery.find_migrations ~dir:migrations_dir () with
       | Error err -> Lwt.return_error err
       | Ok all_migrations ->
-          (* Filter to only applied migrations *)
           let applied_set = List.fold_left
             (fun set v -> Discovery.Int64Set.add v set)
             Discovery.Int64Set.empty
@@ -434,6 +407,5 @@ let rollback_all ?(verbose = false) ?(migrations_dir = Discovery.default_migrati
             all_migrations
           in
 
-          (* Rollback all migrations *)
           rollback_migrations ~verbose db applied_migrations >|= fun results ->
           Ok results

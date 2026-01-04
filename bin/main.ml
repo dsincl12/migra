@@ -27,7 +27,7 @@ let require_database_url () =
 (* Generate command *)
 let generate_cmd =
   let name = Arg.(required & pos 0 (some string) None & info [] ~docv:"NAME" ~doc:"Migration name") in
-  let run name = run_lwt (fun () -> Commands.create name) in
+  let run name = run_lwt (fun () -> Commands.generate name) in
   let doc = "Generate a new migration file" in
   let info = Cmd.info "generate" ~doc in
   Cmd.v info Term.(const run $ name)

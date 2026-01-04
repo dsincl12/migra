@@ -24,9 +24,8 @@ let generate_version () : int64 =
     Example: 20240115120000_create_users.sql -> 20240115120000
 *)
 let parse_version (filename : string) : (int64, Types.error) result =
-  (* Extract just the filename from path *)
   let basename = Filename.basename filename in
-  (* Find the first underscore *)
+
   match String.index_opt basename '_' with
   | Some idx when idx = 14 ->
       let version_str = String.sub basename 0 14 in
@@ -43,9 +42,9 @@ let parse_version (filename : string) : (int64, Types.error) result =
 *)
 let parse_description (filename : string) : (string, Types.error) result =
   let basename = Filename.basename filename in
+
   match String.index_opt basename '_' with
   | Some idx when idx = 14 ->
-      (* Extract between underscore and .sql extension *)
       let rest = String.sub basename (idx + 1) (String.length basename - idx - 1) in
       if String.ends_with ~suffix:".sql" rest then
         let desc = String.sub rest 0 (String.length rest - 4) in
@@ -82,7 +81,6 @@ let read_sql (migration : t) : (string, Types.error) result =
 let parse_section (content : string) (section : string) : string option =
   let lines = String.split_on_char '\n' content in
 
-  (* Find the section start using recursive search *)
   let section_marker = "-- +migrate " ^ section in
   let rec find_section_start = function
     | [] -> None
@@ -108,8 +106,8 @@ let parse_section (content : string) (section : string) : string option =
               collect_until_next_section (line :: acc) rest
       in
       let section_content = collect_until_next_section [] section_lines in
-      (* Join lines and trim whitespace *)
       let joined = String.concat "\n" section_content in
+
       Some (String.trim joined)
 
 let read_up_sql (migration : t) : (string, Types.error) result =

@@ -67,16 +67,15 @@ end
 
 module SQLite_dialect : DIALECT = struct
   let name = "SQLite"
-  let default_port = None  (* File-based, no network port *)
-  let admin_database = None  (* No admin database concept *)
-  let supports_database_lifecycle = false  (* Use file operations instead *)
+  let default_port = None
+  let admin_database = None
+  let supports_database_lifecycle = false
 
   (* These are unused for SQLite but required by signature *)
   let database_exists_sql = ""
   let create_database_sql _ = ""
   let drop_database_sql _ = ""
 
-  (* SQLite automatically converts timestamps to strings *)
   let timestamp_to_string col = col
 
   let schema_migrations_ddl = None
@@ -88,7 +87,6 @@ end
     We accept both formats for user convenience but normalize to what Caqti expects.
 *)
 let normalize_url (url : string) : string =
-  (* Convert sqlite3:// to sqlite3: for Caqti *)
   if String.starts_with ~prefix:"sqlite3://" url then
     "sqlite3:" ^ String.sub url 10 (String.length url - 10)
   else
@@ -102,10 +100,9 @@ let detect_from_url (url : string) : (t, string) result =
   else if String.starts_with ~prefix:"sqlite3://" url then Ok SQLite
   else if String.starts_with ~prefix:"sqlite3:" url then Ok SQLite
   else
-    (* Extract just the scheme from the URL for error message *)
     let scheme =
       match String.index_opt url ':' with
-      | Some idx -> String.sub url 0 (idx + 3)  (* Include "://" *)
+      | Some idx -> String.sub url 0 (idx + 3)
       | None -> url
     in
     Error (Printf.sprintf
@@ -121,8 +118,7 @@ let detect_from_url (url : string) : (t, string) result =
        - mariadb://root@localhost:3306/mydb\n\
        - sqlite3://./dev.db (normalized to sqlite3:./dev.db)\n\
        - sqlite3::memory: (in-memory database)\n\
-       \n\
-       See DATABASE_COMPARISON.md for help choosing a database."
+       \n"
       scheme)
 
 let get_dialect (db_type : t) : (module DIALECT) =

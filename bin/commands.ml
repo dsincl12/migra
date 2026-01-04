@@ -4,7 +4,6 @@ open Lwt.Infix
 open Migra
 
 let with_initialized_db database_url f =
-  (* Detect dialect from database_url *)
   match Dialect.detect_from_url database_url with
   | Error msg ->
       Lwt_io.eprintlf "Invalid DATABASE_URL: %s" msg >>= fun () ->
@@ -83,7 +82,7 @@ let rollback_migrations_with_progress ?(verbose = false) db migrations : Runner.
   in
   rollback_all [] sorted
 
-let create name =
+let generate name =
   let version = Migration.generate_version () in
   let filename = Printf.sprintf "%Ld_%s.sql" version name in
   let migrations_dir = "migrations" in

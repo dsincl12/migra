@@ -1,11 +1,11 @@
 (** CLI command implementations for Migra. *)
 
-(** Create a new migration file
+(** Generate a new migration file
 
     @param name Migration name (description part of filename)
     @return Unit on success, raises exception on failure
 *)
-val create : string -> unit Lwt.t
+val generate : string -> unit Lwt.t
 
 (** Run all pending migrations
 
