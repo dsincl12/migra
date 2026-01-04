@@ -2,6 +2,7 @@
 opam-version: "2.0"
 synopsis:
   "A database migration tool for OCaml supporting PostgreSQL, MariaDB, and SQLite"
+maintainer: ["David Sinclair"]
 authors: ["David Sinclair"]
 license: "MIT"
 tags: [
@@ -19,6 +20,7 @@ depends: [
   "alcotest-lwt" {with-test & >= "1.7.0"}
   "caqti" {>= "2.0.0"}
   "caqti-lwt" {>= "2.0.0"}
+  "caqti-dynload" {>= "2.0.0"}
   "uri" {>= "4.4.0"}
   "cmdliner" {>= "1.2.0"}
   "odoc" {with-doc}

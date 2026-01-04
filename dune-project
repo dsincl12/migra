@@ -8,6 +8,7 @@
  (github dsincl12/migra))
 
 (authors "David Sinclair")
+(maintainers "David Sinclair")
 
 (license MIT)
 
@@ -25,6 +26,7 @@
    (alcotest-lwt (and :with-test (>= 1.7.0)))
    (caqti (>= 2.0.0))
    (caqti-lwt (>= 2.0.0))
+   (caqti-dynload (>= 2.0.0))
    (uri (>= 4.4.0))
    (cmdliner (>= 1.2.0)))
  (depopts

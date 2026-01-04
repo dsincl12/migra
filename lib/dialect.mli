@@ -65,6 +65,16 @@ module MariaDB_dialect : DIALECT
 
 module SQLite_dialect : DIALECT
 
+(** Normalize database URL for Caqti compatibility
+
+    SQLite: caqti-driver-sqlite3 expects sqlite3:path (single colon), not sqlite3://path
+    We accept both formats for user convenience but normalize to what Caqti expects.
+
+    @param url Database URL
+    @return Normalized URL
+*)
+val normalize_url : string -> string
+
 (** Detect database type from URL scheme
     @param url Database URL (e.g., "postgresql://...", "sqlite3://...")
     @return Ok dialect or Error message for unsupported schemes

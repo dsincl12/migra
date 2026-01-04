@@ -82,12 +82,25 @@ module SQLite_dialect : DIALECT = struct
   let schema_migrations_ddl = None
 end
 
+(** Normalize database URL for Caqti compatibility
+
+    SQLite: caqti-driver-sqlite3 expects sqlite3:path (single colon), not sqlite3://path
+    We accept both formats for user convenience but normalize to what Caqti expects.
+*)
+let normalize_url (url : string) : string =
+  (* Convert sqlite3:// to sqlite3: for Caqti *)
+  if String.starts_with ~prefix:"sqlite3://" url then
+    "sqlite3:" ^ String.sub url 10 (String.length url - 10)
+  else
+    url
+
 let detect_from_url (url : string) : (t, string) result =
   if String.starts_with ~prefix:"postgresql://" url then Ok PostgreSQL
   else if String.starts_with ~prefix:"postgres://" url then Ok PostgreSQL
   else if String.starts_with ~prefix:"mariadb://" url then Ok MariaDB
   else if String.starts_with ~prefix:"mysql://" url then Ok MariaDB
   else if String.starts_with ~prefix:"sqlite3://" url then Ok SQLite
+  else if String.starts_with ~prefix:"sqlite3:" url then Ok SQLite
   else
     (* Extract just the scheme from the URL for error message *)
     let scheme =
@@ -101,12 +114,13 @@ let detect_from_url (url : string) : (t, string) result =
        Supported databases:\n\
        - PostgreSQL: postgresql:// or postgres://\n\
        - MariaDB/MySQL: mariadb:// or mysql://\n\
-       - SQLite: sqlite3://\n\
+       - SQLite: sqlite3:// or sqlite3:\n\
        \n\
        Examples:\n\
        - postgresql://user@localhost:5432/mydb\n\
        - mariadb://root@localhost:3306/mydb\n\
-       - sqlite3://./dev.db\n\
+       - sqlite3://./dev.db (normalized to sqlite3:./dev.db)\n\
+       - sqlite3::memory: (in-memory database)\n\
        \n\
        See DATABASE_COMPARISON.md for help choosing a database."
       scheme)

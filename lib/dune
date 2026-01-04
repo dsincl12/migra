@@ -6,6 +6,7 @@
    caqti
    caqti-lwt
    caqti-lwt.unix
+   caqti-dynload
    uri
    unix
    str))

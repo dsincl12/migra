@@ -2,5 +2,5 @@
  (public_name migra)
  (name main)
  (modules main commands)
- (libraries migra lwt lwt.unix caqti caqti-lwt caqti-lwt.unix cmdliner)
+ (libraries migra lwt lwt.unix caqti caqti-lwt caqti-lwt.unix caqti-dynload cmdliner)
  (preprocess (pps lwt_ppx)))

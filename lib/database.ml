@@ -72,7 +72,9 @@ let improve_driver_error (database_url : string) (err : Caqti_error.t) : string 
     Returns a single connection (use for one-off operations or transactions)
 *)
 let connect_db (database_url : string) : ((Types.db_conn, Types.error) result) Lwt.t =
-  Caqti_lwt_unix.connect (Uri.of_string database_url) >|= function
+  (* Normalize URL for Caqti compatibility (e.g., sqlite3:// -> sqlite3:) *)
+  let normalized_url = Dialect.normalize_url database_url in
+  Caqti_lwt_unix.connect (Uri.of_string normalized_url) >|= function
   | Ok conn -> Ok (conn :> Types.db_conn)
   | Error err ->
       (* Check if this is a "driver not found" error and improve the message *)
