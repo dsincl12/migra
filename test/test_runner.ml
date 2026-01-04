@@ -3,10 +3,10 @@ open Lwt.Infix
 open Test_helpers
 
 let with_initialized_db db_url f =
-  Migris.Database.connect_db db_url >>= function
-  | Error err -> Lwt.fail_with (Printf.sprintf "Failed to connect: %s" (Migris.Types.show_error err))
+  Migra.Database.connect_db db_url >>= function
+  | Error err -> Lwt.fail_with (Printf.sprintf "Failed to connect: %s" (Migra.Types.show_error err))
   | Ok db ->
-      Migris.Runner.ensure_migrations_table db >>= function
+      Migra.Runner.ensure_migrations_table Migra.Dialect.PostgreSQL db >>= function
       | Error err -> Lwt.fail_with (Printf.sprintf "Failed to create_table: %s" (Caqti_error.show err))
       | Ok () -> f db
 
@@ -18,19 +18,19 @@ let test_run_migration_success () =
         "CREATE TABLE test_users (id SERIAL PRIMARY KEY, name TEXT);"
         "DROP TABLE test_users;" in
 
-      let migration = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migration = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok (m :: _) -> m
         | _ -> Alcotest.fail "Failed to discover migration"
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migration db migration >>= fun result ->
+        Migra.Runner.run_migration db migration >>= fun result ->
         (match result with
-         | Migris.Runner.Failure (_migration, err) ->
-             Alcotest.fail (Printf.sprintf "run_migration failed: %s" (Migris.Types.show_error err))
-         | Migris.Runner.Success _migration ->
+         | Migra.Runner.Failure (_migration, err) ->
+             Alcotest.fail (Printf.sprintf "run_migration failed: %s" (Migra.Types.show_error err))
+         | Migra.Runner.Success _migration ->
 
-             Migris.Runner.is_applied db version >>= function
+             Migra.Runner.is_applied db version >>= function
              | Error err ->
                  Alcotest.fail (Printf.sprintf "is_applied check failed: %s" (Caqti_error.show err))
              | Ok is_applied ->
@@ -58,20 +58,20 @@ let test_run_migration_sql_failure_rollback () =
         "CREATE TABLE test_table (id SERIAL PRIMARY KEY); SELECT * FROM nonexistent_table_xyz;"
         "DROP TABLE test_table;" in
 
-      let migration = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migration = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok (m :: _) -> m
         | _ -> Alcotest.fail "Failed to discover migration"
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migration db migration >>= fun result ->
+        Migra.Runner.run_migration db migration >>= fun result ->
 
         (match result with
-         | Migris.Runner.Success _ ->
+         | Migra.Runner.Success _ ->
              Alcotest.fail "Expected migration to fail, but it succeeded"
-         | Migris.Runner.Failure (_migration, _err) ->
+         | Migra.Runner.Failure (_migration, _err) ->
 
-             Migris.Runner.is_applied db version >>= function
+             Migra.Runner.is_applied db version >>= function
              | Error err ->
                  Alcotest.fail (Printf.sprintf "is_applied check failed: %s" (Caqti_error.show err))
              | Ok is_applied ->
@@ -95,24 +95,24 @@ let test_run_migration_file_error () =
   with_test_db_pooled "runner_file_err" (fun db_url ->
     with_temp_dir "migrations" (fun migrations_dir ->
       let version = 20240115120000L in
-      let filename = Migris.Migration.make_filename version "no_sections" in
+      let filename = Migra.Migration.make_filename version "no_sections" in
       let filepath = Filename.concat migrations_dir filename in
       let oc = open_out filepath in
       output_string oc "This file has no up/down sections\n";
       close_out oc;
 
-      let migration = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migration = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok (m :: _) -> m
         | _ -> Alcotest.fail "Failed to discover migration"
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migration db migration >>= fun result ->
+        Migra.Runner.run_migration db migration >>= fun result ->
 
-        Alcotest.(check bool) "migration failed" false (Migris.Runner.is_success result);
-        Alcotest.(check bool) "has error message" true (Option.is_some (Migris.Runner.error_of_result result));
+        Alcotest.(check bool) "migration failed" false (Migra.Runner.is_success result);
+        Alcotest.(check bool) "has error message" true (Option.is_some (Migra.Runner.error_of_result result));
 
-        Migris.Runner.is_applied db version >>= function
+        Migra.Runner.is_applied db version >>= function
         | Error err ->
             Alcotest.fail (Printf.sprintf "is_applied check failed: %s" (Caqti_error.show err))
         | Ok is_applied ->
@@ -136,20 +136,20 @@ let test_run_migrations_multiple () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let migrations = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migrations = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok migs -> migs
-        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migris.Types.show_error err))
+        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migra.Types.show_error err))
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migrations db migrations >>= fun results ->
+        Migra.Runner.run_migrations db migrations >>= fun results ->
 
         Alcotest.(check int) "3 results" 3 (List.length results);
         List.iter (fun result ->
-          Alcotest.(check bool) "migration succeeded" true (Migris.Runner.is_success result)
+          Alcotest.(check bool) "migration succeeded" true (Migra.Runner.is_success result)
         ) results;
 
-        Migris.Runner.get_applied_versions db >>= function
+        Migra.Runner.get_applied_versions db >>= function
         | Error err ->
             Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
         | Ok versions ->
@@ -176,19 +176,19 @@ let test_run_migrations_stops_on_failure () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let migrations = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migrations = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok migs -> migs
-        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migris.Types.show_error err))
+        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migra.Types.show_error err))
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migrations db migrations >>= fun results ->
+        Migra.Runner.run_migrations db migrations >>= fun results ->
 
         Alcotest.(check int) "2 results (stopped after failure)" 2 (List.length results);
-        Alcotest.(check bool) "first succeeded" true (Migris.Runner.is_success (List.nth results 0));
-        Alcotest.(check bool) "second failed" false (Migris.Runner.is_success (List.nth results 1));
+        Alcotest.(check bool) "first succeeded" true (Migra.Runner.is_success (List.nth results 0));
+        Alcotest.(check bool) "second failed" false (Migra.Runner.is_success (List.nth results 1));
 
-        Migris.Runner.get_applied_versions db >>= function
+        Migra.Runner.get_applied_versions db >>= function
         | Error err ->
             Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
         | Ok versions ->
@@ -207,24 +207,24 @@ let test_rollback_migration_success () =
         "CREATE TABLE test_rollback (id SERIAL PRIMARY KEY, name TEXT);"
         "DROP TABLE test_rollback;" in
 
-      let migration = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migration = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok (m :: _) -> m
         | _ -> Alcotest.fail "Failed to discover migration"
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migration db migration >>= function
-        | Migris.Runner.Failure (_, err) ->
-            Alcotest.fail (Printf.sprintf "run_migration failed: %s" (Migris.Types.show_error err))
-        | Migris.Runner.Success _ ->
-            Migris.Runner.rollback_migration db migration >>= fun result ->
+        Migra.Runner.run_migration db migration >>= function
+        | Migra.Runner.Failure (_, err) ->
+            Alcotest.fail (Printf.sprintf "run_migration failed: %s" (Migra.Types.show_error err))
+        | Migra.Runner.Success _ ->
+            Migra.Runner.rollback_migration db migration >>= fun result ->
             (match result with
-             | Migris.Runner.Failure (_, err) ->
-                 Alcotest.fail (Printf.sprintf "rollback_migration failed: %s" (Migris.Types.show_error err))
-             | Migris.Runner.Success _ ->
-                 Alcotest.(check bool) "rollback succeeded" true (Migris.Runner.is_success result);
+             | Migra.Runner.Failure (_, err) ->
+                 Alcotest.fail (Printf.sprintf "rollback_migration failed: %s" (Migra.Types.show_error err))
+             | Migra.Runner.Success _ ->
+                 Alcotest.(check bool) "rollback succeeded" true (Migra.Runner.is_success result);
 
-                 Migris.Runner.is_applied db version >>= function
+                 Migra.Runner.is_applied db version >>= function
                  | Error err ->
                      Alcotest.fail (Printf.sprintf "is_applied check failed: %s" (Caqti_error.show err))
                  | Ok is_applied ->
@@ -252,21 +252,21 @@ let test_rollback_migration_sql_failure () =
         "CREATE TABLE test_table (id SERIAL PRIMARY KEY);"
         "SELECT * FROM nonexistent_table_xyz;" in
 
-      let migration = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migration = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok (m :: _) -> m
         | _ -> Alcotest.fail "Failed to discover migration"
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migration db migration >>= function
-        | Migris.Runner.Failure (_, err) ->
-            Alcotest.fail (Printf.sprintf "run_migration failed: %s" (Migris.Types.show_error err))
-        | Migris.Runner.Success _ ->
-            Migris.Runner.rollback_migration db migration >>= fun result ->
+        Migra.Runner.run_migration db migration >>= function
+        | Migra.Runner.Failure (_, err) ->
+            Alcotest.fail (Printf.sprintf "run_migration failed: %s" (Migra.Types.show_error err))
+        | Migra.Runner.Success _ ->
+            Migra.Runner.rollback_migration db migration >>= fun result ->
 
-            Alcotest.(check bool) "rollback failed" false (Migris.Runner.is_success result);
+            Alcotest.(check bool) "rollback failed" false (Migra.Runner.is_success result);
 
-            Migris.Runner.is_applied db version >>= function
+            Migra.Runner.is_applied db version >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "is_applied check failed: %s" (Caqti_error.show err))
             | Ok is_applied ->
@@ -290,21 +290,21 @@ let test_rollback_step () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let migrations = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migrations = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok migs -> migs
-        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migris.Types.show_error err))
+        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migra.Types.show_error err))
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migrations db migrations >>= fun _ ->
+        Migra.Runner.run_migrations db migrations >>= fun _ ->
 
-        Migris.Runner.rollback_step ~migrations_dir db 2 >>= function
+        Migra.Runner.rollback_step ~migrations_dir db 2 >>= function
         | Error err ->
-            Alcotest.fail (Printf.sprintf "rollback_step failed: %s" (Migris.Types.show_error err))
+            Alcotest.fail (Printf.sprintf "rollback_step failed: %s" (Migra.Types.show_error err))
         | Ok results ->
             Alcotest.(check int) "2 rollbacks" 2 (List.length results);
 
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
             | Ok versions ->
@@ -329,21 +329,21 @@ let test_rollback_to () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let migrations = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migrations = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok migs -> migs
-        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migris.Types.show_error err))
+        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migra.Types.show_error err))
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migrations db migrations >>= fun _ ->
+        Migra.Runner.run_migrations db migrations >>= fun _ ->
 
-        Migris.Runner.rollback_to ~migrations_dir db v1 >>= function
+        Migra.Runner.rollback_to ~migrations_dir db v1 >>= function
         | Error err ->
-            Alcotest.fail (Printf.sprintf "rollback_to failed: %s" (Migris.Types.show_error err))
+            Alcotest.fail (Printf.sprintf "rollback_to failed: %s" (Migra.Types.show_error err))
         | Ok results ->
             Alcotest.(check int) "2 rollbacks" 2 (List.length results);
 
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
             | Ok versions ->
@@ -368,21 +368,21 @@ let test_rollback_all () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let migrations = match Migris.Discovery.find_migrations ~dir:migrations_dir () with
+      let migrations = match Migra.Discovery.find_migrations ~dir:migrations_dir () with
         | Ok migs -> migs
-        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migris.Types.show_error err))
+        | Error err -> Alcotest.fail (Printf.sprintf "Failed to discover: %s" (Migra.Types.show_error err))
       in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_migrations db migrations >>= fun _ ->
+        Migra.Runner.run_migrations db migrations >>= fun _ ->
 
-        Migris.Runner.rollback_all ~migrations_dir db >>= function
+        Migra.Runner.rollback_all ~migrations_dir db >>= function
         | Error err ->
-            Alcotest.fail (Printf.sprintf "rollback_all failed: %s" (Migris.Types.show_error err))
+            Alcotest.fail (Printf.sprintf "rollback_all failed: %s" (Migra.Types.show_error err))
         | Ok results ->
             Alcotest.(check int) "3 rollbacks" 3 (List.length results);
 
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
             | Ok versions ->
@@ -407,16 +407,16 @@ let test_run_pending () =
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error err ->
-            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migris.Types.show_error err))
+            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error err))
         | Ok results ->
             Alcotest.(check int) "3 migrations executed" 3 (List.length results);
             List.iter (fun result ->
-              Alcotest.(check bool) "migration succeeded" true (Migris.Runner.is_success result)
+              Alcotest.(check bool) "migration succeeded" true (Migra.Runner.is_success result)
             ) results;
 
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
             | Ok versions ->

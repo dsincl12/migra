@@ -4,13 +4,13 @@ type migration_record = {
   created_at : string;
 }
 
-(** Create the schema_migrations table if it doesn't exist.
+(** Create the schema_migrations table if it doesn't exist (dialect-aware).
     Idempotent - safe to call multiple times. *)
-val ensure_migrations_table : Types.db_conn -> (unit, [> Caqti_error.t]) Lwt_result.t
+val ensure_migrations_table : Dialect.t -> Types.db_conn -> (unit, [> Caqti_error.t]) Lwt_result.t
 
 val get_applied_versions : Types.db_conn -> (int64 list, [> Caqti_error.t]) Lwt_result.t
 
-val get_applied_records : Types.db_conn -> (migration_record list, [> Caqti_error.t]) Lwt_result.t
+val get_applied_records : Dialect.t -> Types.db_conn -> (migration_record list, [> Caqti_error.t]) Lwt_result.t
 
 val is_applied : Types.db_conn -> int64 -> (bool, [> Caqti_error.t]) Lwt_result.t
 

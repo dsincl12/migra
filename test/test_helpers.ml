@@ -19,7 +19,7 @@ module TestDbPool = struct
     | Some url ->
         match Uri.of_string url with
         | uri ->
-            match Migris.Database.get_admin_database_url uri with
+            match Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri with
             | Ok admin_url -> admin_url
             | Error _ ->
                 let userinfo = Uri.userinfo uri in
@@ -37,9 +37,9 @@ module TestDbPool = struct
     let db_name = Printf.sprintf "migra_test_pool_%s_%d_%d" prefix timestamp random in
     let admin_url = get_admin_url () in
 
-    Migris.Database.connect_db admin_url >>= function
+    Migra.Database.connect_db admin_url >>= function
     | Error err ->
-        Lwt.return_error (Printf.sprintf "Failed to connect to postgres: %s" (Migris.Types.show_error err))
+        Lwt.return_error (Printf.sprintf "Failed to connect to postgres: %s" (Migra.Types.show_error err))
     | Ok db ->
         let module Db = (val db : Caqti_lwt.CONNECTION) in
         let open Caqti_request.Infix in
@@ -68,7 +68,7 @@ module TestDbPool = struct
             }
 
   let clean_database db_url =
-    Migris.Database.connect_db db_url >>= function
+    Migra.Database.connect_db db_url >>= function
     | Error _ -> Lwt.return_unit  (* Ignore errors during cleanup *)
     | Ok db ->
         let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -135,7 +135,7 @@ module TestDbPool = struct
   let cleanup () =
     Lwt_mutex.with_lock lock (fun () ->
       let admin_url = get_admin_url () in
-      Migris.Database.connect_db admin_url >>= function
+      Migra.Database.connect_db admin_url >>= function
       | Error _ -> Lwt.return_unit
       | Ok db ->
           let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -162,7 +162,7 @@ let get_admin_url () =
   | Some url ->
       match Uri.of_string url with
       | uri ->
-          match Migris.Database.get_admin_database_url uri with
+          match Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri with
           | Ok admin_url -> admin_url
           | Error _ ->
               let userinfo = Uri.userinfo uri in
@@ -178,9 +178,9 @@ let create_test_db prefix =
   let db_name = test_db_name prefix in
   let admin_url = get_admin_url () in
 
-  Migris.Database.connect_db admin_url >>= function
+  Migra.Database.connect_db admin_url >>= function
   | Error err ->
-      Lwt.return_error (Printf.sprintf "Failed to connect to postgres: %s" (Migris.Types.show_error err))
+      Lwt.return_error (Printf.sprintf "Failed to connect to postgres: %s" (Migra.Types.show_error err))
   | Ok db ->
       let module Db = (val db : Caqti_lwt.CONNECTION) in
       let open Caqti_request.Infix in
@@ -207,9 +207,9 @@ let create_test_db prefix =
 let drop_test_db db_name =
   let admin_url = get_admin_url () in
 
-  Migris.Database.connect_db admin_url >>= function
+  Migra.Database.connect_db admin_url >>= function
   | Error err ->
-      Lwt.return_error (Printf.sprintf "Failed to connect to postgres: %s" (Migris.Types.show_error err))
+      Lwt.return_error (Printf.sprintf "Failed to connect to postgres: %s" (Migra.Types.show_error err))
   | Ok db ->
       let module Db = (val db : Caqti_lwt.CONNECTION) in
       let open Caqti_request.Infix in
@@ -284,7 +284,7 @@ let with_temp_dir prefix f =
     )
 
 let create_migration_file dir version description content =
-  let filename = Migris.Migration.make_filename version description in
+  let filename = Migra.Migration.make_filename version description in
   let filepath = Filename.concat dir filename in
   let oc = open_out filepath in
   output_string oc content;
@@ -300,8 +300,8 @@ let int64_testable = Alcotest.testable
   Int64.equal
 
 let migration_testable = Alcotest.testable
-  (fun fmt m -> Format.fprintf fmt "%s" (Migris.Migration.to_string m))
-  (fun a b -> Int64.equal a.Migris.Migration.version b.Migris.Migration.version)
+  (fun fmt m -> Format.fprintf fmt "%s" (Migra.Migration.to_string m))
+  (fun a b -> Int64.equal a.Migra.Migration.version b.Migra.Migration.version)
 
 let is_ok = function
   | Ok _ -> true
@@ -313,11 +313,11 @@ let is_error = function
 
 let get_ok = function
   | Ok v -> v
-  | Error err -> Alcotest.fail (Printf.sprintf "Expected Ok but got Error: %s" (Migris.Types.show_error err))
+  | Error err -> Alcotest.fail (Printf.sprintf "Expected Ok but got Error: %s" (Migra.Types.show_error err))
 
 let get_error = function
   | Ok _ -> Alcotest.fail "Expected Error but got Ok"
-  | Error err -> Migris.Types.show_error err
+  | Error err -> Migra.Types.show_error err
 
 let string_contains_substring haystack needle =
   let needle_len = String.length needle in

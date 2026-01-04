@@ -1,16 +1,22 @@
-(** CLI command implementations for Migris. *)
+(** CLI command implementations for Migra. *)
 
 open Lwt.Infix
-open Migris
+open Migra
 
 let with_initialized_db database_url f =
-  Database.with_db database_url (fun db ->
-    Lwt.bind (Runner.ensure_migrations_table db) (function
-    | Error err ->
-        Lwt_io.eprintlf "Failed to initialize database: %s"
-          (Caqti_error.show err) >>= fun () ->
-        exit 1
-    | Ok () -> f db)
+  (* Detect dialect from database_url *)
+  match Dialect.detect_from_url database_url with
+  | Error msg ->
+      Lwt_io.eprintlf "Invalid DATABASE_URL: %s" msg >>= fun () ->
+      exit 1
+  | Ok dialect ->
+      Database.with_db database_url (fun db ->
+        Lwt.bind (Runner.ensure_migrations_table dialect db) (function
+        | Error err ->
+            Lwt_io.eprintlf "Failed to initialize database: %s"
+              (Caqti_error.show err) >>= fun () ->
+            exit 1
+        | Ok () -> f db)
   ) >>= function
   | Ok result -> Lwt.return result
   | Error err ->
@@ -102,6 +108,15 @@ let create name =
   Lwt_io.printlf "Creating %s" filepath
 
 let migrate migrations_dir verbose database_url =
+  (* Show database type in verbose mode *)
+  (if verbose then
+    match Dialect.detect_from_url database_url with
+    | Ok dialect ->
+        Lwt_io.eprintlf "[INFO] Using %s database" (Dialect.to_string dialect)
+    | Error _ ->
+        Lwt.return_unit  (* Error will be caught by with_initialized_db *)
+  else
+    Lwt.return_unit) >>= fun () ->
   with_initialized_db database_url (fun db ->
     (* Discover all migrations *)
     match Discovery.find_migrations ~dir:migrations_dir () with
@@ -139,9 +154,21 @@ let init database_url =
           exit 1
       | Ok () ->
           Lwt_io.printlf "Database '%s' created successfully" db_name >>= fun () ->
-          Lwt_io.printl "\nRun 'migris migrate' to apply migrations"
+          Lwt_io.printl "\nRun 'migra migrate' to apply migrations"
 
 let setup migrations_dir verbose database_url =
+  (* Show database type in verbose mode *)
+  let verbose_output =
+    if verbose then
+      match Dialect.detect_from_url database_url with
+      | Ok dialect ->
+          Lwt_io.eprintlf "[INFO] Using %s database" (Dialect.to_string dialect)
+      | Error _ ->
+          Lwt.return_unit  (* Error will be caught later *)
+    else
+      Lwt.return_unit
+  in
+  verbose_output >>= fun () ->
   let uri = Uri.of_string database_url in
   match Database.get_database uri with
   | Error err ->
@@ -172,7 +199,7 @@ let setup migrations_dir verbose database_url =
                     match pending with
                     | [] ->
                         Lwt_io.printl "No pending migrations" >>= fun () ->
-                        Lwt_io.printl "\nSetup complete! Create migrations with 'migris create <name>'"
+                        Lwt_io.printl "\nSetup complete! Create migrations with 'migra create <name>'"
                     | _ ->
                         run_migrations_with_progress ~verbose db pending >>= fun results ->
                         let failed = List.filter (fun r -> not (Runner.is_success r)) results in
@@ -198,6 +225,18 @@ let drop database_url =
           Lwt_io.printlf "Database '%s' dropped successfully" db_name
 
 let reset migrations_dir verbose database_url =
+  (* Show database type in verbose mode *)
+  let verbose_output =
+    if verbose then
+      match Dialect.detect_from_url database_url with
+      | Ok dialect ->
+          Lwt_io.eprintlf "[INFO] Using %s database" (Dialect.to_string dialect)
+      | Error _ ->
+          Lwt.return_unit  (* Error will be caught later *)
+    else
+      Lwt.return_unit
+  in
+  verbose_output >>= fun () ->
   let uri = Uri.of_string database_url in
   match Database.get_database uri with
   | Error err ->
@@ -239,7 +278,7 @@ let reset migrations_dir verbose database_url =
                         match pending with
                         | [] ->
                             Lwt_io.printl "No pending migrations" >>= fun () ->
-                            Lwt_io.printl "\nReset complete! Create migrations with 'migris create <name>'"
+                            Lwt_io.printl "\nReset complete! Create migrations with 'migra create <name>'"
                         | _ ->
                             run_migrations_with_progress ~verbose db pending >>= fun results ->
                             let failed = List.filter (fun r -> not (Runner.is_success r)) results in
@@ -250,6 +289,15 @@ let reset migrations_dir verbose database_url =
               )
 
 let rollback migrations_dir step to_version all verbose database_url =
+  (* Show database type in verbose mode *)
+  (if verbose then
+    match Dialect.detect_from_url database_url with
+    | Ok dialect ->
+        Lwt_io.eprintlf "[INFO] Using %s database" (Dialect.to_string dialect)
+    | Error _ ->
+        Lwt.return_unit  (* Error will be caught by with_initialized_db *)
+  else
+    Lwt.return_unit) >>= fun () ->
   with_initialized_db database_url (fun db ->
     (* Get applied versions *)
     Runner.get_applied_versions db >>= function

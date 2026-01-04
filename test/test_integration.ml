@@ -8,4 +8,6 @@ let () =
     "Runner", Test_runner.suite;
     "Migrator", Test_migrator.suite;
     "E2E", Test_e2e.suite;
+    "SQLite Integration", Test_integration_sqlite.suite;
+    "MariaDB Integration", Test_integration_mariadb.suite;
   ]

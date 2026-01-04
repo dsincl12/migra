@@ -40,15 +40,21 @@ type rollback_strategy =
   | To of int64
   | All
 
+(** Connect to database, initialize schema, run function
+    The callback function receives both the database connection and dialect *)
 let with_initialized_db database_url f =
-  Database.with_db database_url (fun db ->
-    Runner.ensure_migrations_table db >>= function
-    | Error err -> Lwt.fail_with (Caqti_error.show err)
-    | Ok () ->
-        f db >>= function
-        | Ok result -> Lwt.return result
-        | Error err -> Lwt.fail_with (Types.show_error err)
-  )
+  (* Detect dialect from database_url *)
+  match Dialect.detect_from_url database_url with
+  | Error msg -> Lwt.fail_with msg
+  | Ok dialect ->
+      Database.with_db database_url (fun db ->
+        Runner.ensure_migrations_table dialect db >>= function
+        | Error err -> Lwt.fail_with (Caqti_error.show err)
+        | Ok () ->
+            f dialect db >>= function
+            | Ok result -> Lwt.return result
+            | Error err -> Lwt.fail_with (Types.show_error err)
+      )
 
 let to_migration_result (runner_result : Runner.execution_result) (elapsed : float) : migration_result =
   match runner_result with
@@ -114,7 +120,7 @@ let make_operation_result (results : migration_result list) : operation_result =
   { migrations = results; success_count; failure_count }
 
 let run (config : config) =
-  with_initialized_db config.database_url (fun db ->
+  with_initialized_db config.database_url (fun _dialect db ->
     (* Discover all migrations *)
     match Discovery.find_migrations ~dir:config.migrations_dir () with
     | Error err -> Lwt.return_error err
@@ -133,7 +139,7 @@ let run (config : config) =
   )
 
 let rollback (config : config) strategy =
-  with_initialized_db config.database_url (fun db ->
+  with_initialized_db config.database_url (fun _dialect db ->
     (* Get applied versions *)
     Runner.get_applied_versions db >>= function
     | Error err ->
@@ -174,9 +180,9 @@ let rollback (config : config) strategy =
   )
 
 let status (cfg : config) =
-  with_initialized_db cfg.database_url (fun db ->
+  with_initialized_db cfg.database_url (fun dialect db ->
     (* Get applied records (with timestamps) *)
-    Runner.get_applied_records db >>= function
+    Runner.get_applied_records dialect db >>= function
     | Error err ->
         Lwt.return_error (Types.of_caqti_error ~context:"get applied migrations" err)
     | Ok applied_records ->

@@ -56,15 +56,6 @@ type migration_record = {
   created_at : string;
 }
 
-let create_table_query =
-  (unit ->. unit)
-  {sql|
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version BIGINT PRIMARY KEY,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  |sql}
-
 let migration_exists_query =
   (int64 ->? int64)
   {sql|
@@ -77,11 +68,14 @@ let get_all_versions_query =
     SELECT version FROM schema_migrations ORDER BY version ASC
   |sql}
 
-let get_all_records_query =
-  (unit ->* t2 int64 string)
-  {sql|
-    SELECT version, created_at::text FROM schema_migrations ORDER BY version ASC
-  |sql}
+let get_all_records_query (dialect : Dialect.t) =
+  let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
+  let timestamp_expr = D.timestamp_to_string "created_at" in
+  let sql = Printf.sprintf
+    "SELECT version, %s FROM schema_migrations ORDER BY version ASC"
+    timestamp_expr
+  in
+  (unit ->* t2 int64 string) sql
 
 let insert_migration_query =
   (int64 ->. unit)
@@ -101,9 +95,22 @@ let get_latest_version_query =
     SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1
   |sql}
 
-let ensure_migrations_table (db : Types.db_conn) : (unit, [> Caqti_error.t]) Lwt_result.t =
+let ensure_migrations_table (dialect : Dialect.t) (db : Types.db_conn) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.exec create_table_query ()
+  let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
+
+  let ddl = match D.schema_migrations_ddl with
+    | Some custom_ddl -> custom_ddl
+    | None -> {sql|
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          version BIGINT PRIMARY KEY,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      |sql}
+  in
+
+  let query = (unit ->. unit) ddl in
+  Db.exec query ()
 
 let is_applied (db : Types.db_conn) (version : int64) : (bool, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -116,10 +123,11 @@ let get_applied_versions (db : Types.db_conn) : (int64 list, [> Caqti_error.t]) 
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   Db.collect_list get_all_versions_query ()
 
-let get_applied_records (db : Types.db_conn) : (migration_record list, [> Caqti_error.t]) Lwt_result.t =
+let get_applied_records (dialect : Dialect.t) (db : Types.db_conn) : (migration_record list, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   let open Lwt.Infix in
-  Db.collect_list get_all_records_query () >|= function
+  let query = get_all_records_query dialect in
+  Db.collect_list query () >|= function
   | Ok rows ->
       Ok (List.map (fun (version, created_at) -> { version; created_at }) rows)
   | Error e -> Error e

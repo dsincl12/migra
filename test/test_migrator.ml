@@ -13,22 +13,22 @@ let test_run_pending () =
       let _f2 = create_migration_with_sections migrations_dir v2 "table2"
         "CREATE TABLE table2 (id SERIAL PRIMARY KEY);" "DROP TABLE table2;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migra.Types.show_error err))
       | Ok result ->
           Alcotest.(check int) "2 migrations ran" 2 (List.length result.migrations);
           Alcotest.(check int) "2 successes" 2 result.success_count;
           Alcotest.(check int) "0 failures" 0 result.failure_count;
 
           List.iter (fun m ->
-            Alcotest.(check bool) "migration succeeded" true m.Migris.Migrator.success;
+            Alcotest.(check bool) "migration succeeded" true m.Migra.Migrator.success;
             Alcotest.(check bool) "no error" true (Option.is_none m.error);
             Alcotest.(check bool) "has timing" true (Option.is_some m.elapsed_seconds);
           ) result.migrations;
@@ -44,19 +44,19 @@ let test_run_no_pending () =
       let _f1 = create_migration_with_sections migrations_dir v1 "table1"
         "CREATE TABLE table1 (id SERIAL PRIMARY KEY);" "DROP TABLE table1;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "First run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "First run failed: %s" (Migra.Types.show_error err))
       | Ok _ ->
-          Migris.Migrator.run config >>= function
+          Migra.Migrator.run config >>= function
           | Error err ->
-              Alcotest.fail (Printf.sprintf "Second run failed: %s" (Migris.Types.show_error err))
+              Alcotest.fail (Printf.sprintf "Second run failed: %s" (Migra.Types.show_error err))
           | Ok result ->
               Alcotest.(check int) "0 migrations ran" 0 (List.length result.migrations);
               Alcotest.(check int) "0 successes" 0 result.success_count;
@@ -79,15 +79,15 @@ let test_run_stops_on_failure () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migra.Types.show_error err))
       | Ok result ->
           Alcotest.(check int) "2 migrations attempted" 2 (List.length result.migrations);
           Alcotest.(check int) "1 success" 1 result.success_count;
@@ -118,26 +118,26 @@ let test_rollback_step () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migra.Types.show_error err))
       | Ok _ ->
-          Migris.Migrator.rollback config (Step 2) >>= function
+          Migra.Migrator.rollback config (Step 2) >>= function
           | Error err ->
-              Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migris.Types.show_error err))
+              Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migra.Types.show_error err))
           | Ok result ->
               Alcotest.(check int) "2 rollbacks" 2 (List.length result.migrations);
               Alcotest.(check int) "2 successes" 2 result.success_count;
               Alcotest.(check int) "0 failures" 0 result.failure_count;
 
               List.iter (fun m ->
-                Alcotest.(check bool) "rollback succeeded" true m.Migris.Migrator.success;
+                Alcotest.(check bool) "rollback succeeded" true m.Migra.Migrator.success;
               ) result.migrations;
 
               Lwt.return_unit
@@ -158,19 +158,19 @@ let test_rollback_to () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migra.Types.show_error err))
       | Ok _ ->
-          Migris.Migrator.rollback config (To v1) >>= function
+          Migra.Migrator.rollback config (To v1) >>= function
           | Error err ->
-              Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migris.Types.show_error err))
+              Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migra.Types.show_error err))
           | Ok result ->
               Alcotest.(check int) "2 rollbacks" 2 (List.length result.migrations);
               Alcotest.(check int) "2 successes" 2 result.success_count;
@@ -189,19 +189,19 @@ let test_rollback_all () =
       let _f2 = create_migration_with_sections migrations_dir v2 "table2"
         "CREATE TABLE table2 (id SERIAL PRIMARY KEY);" "DROP TABLE table2;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "Migrator.run failed: %s" (Migra.Types.show_error err))
       | Ok _ ->
-          Migris.Migrator.rollback config All >>= function
+          Migra.Migrator.rollback config All >>= function
           | Error err ->
-              Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migris.Types.show_error err))
+              Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migra.Types.show_error err))
           | Ok result ->
               Alcotest.(check int) "2 rollbacks" 2 (List.length result.migrations);
               Alcotest.(check int) "2 successes" 2 result.success_count;
@@ -212,15 +212,15 @@ let test_rollback_all () =
 let test_rollback_empty () =
   with_test_db_pooled "migrator_rollback_empty" (fun db_url ->
     with_temp_dir "migrations" (fun migrations_dir ->
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.rollback config All >>= function
+      Migra.Migrator.rollback config All >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "Migrator.rollback failed: %s" (Migra.Types.show_error err))
       | Ok result ->
           Alcotest.(check int) "0 rollbacks" 0 (List.length result.migrations);
           Alcotest.(check int) "0 successes" 0 result.success_count;
@@ -242,37 +242,37 @@ let test_status () =
       let _f3 = create_migration_with_sections migrations_dir v3 "table3"
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.status config >>= function
+      Migra.Migrator.status config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "status failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "status failed: %s" (Migra.Types.show_error err))
       | Ok initial_status ->
           Alcotest.(check int) "3 migrations found" 3 (List.length initial_status.migrations);
           Alcotest.(check int) "3 pending" 3 initial_status.pending_count;
           Alcotest.(check int) "0 applied" 0 initial_status.applied_count;
 
-          let config_limited = Migris.Migrator.{ config with migrations_dir } in
-          Migris.Migrator.run config_limited >>= function
+          let config_limited = Migra.Migrator.{ config with migrations_dir } in
+          Migra.Migrator.run config_limited >>= function
           | Error err ->
-              Alcotest.fail (Printf.sprintf "run failed: %s" (Migris.Types.show_error err))
+              Alcotest.fail (Printf.sprintf "run failed: %s" (Migra.Types.show_error err))
           | Ok run_result ->
               Alcotest.(check int) "3 migrations ran" 3 (List.length run_result.migrations);
 
-              Migris.Migrator.status config >>= function
+              Migra.Migrator.status config >>= function
               | Error err ->
-                  Alcotest.fail (Printf.sprintf "status after run failed: %s" (Migris.Types.show_error err))
+                  Alcotest.fail (Printf.sprintf "status after run failed: %s" (Migra.Types.show_error err))
               | Ok final_status ->
                   Alcotest.(check int) "3 migrations total" 3 (List.length final_status.migrations);
                   Alcotest.(check int) "0 pending" 0 final_status.pending_count;
                   Alcotest.(check int) "3 applied" 3 final_status.applied_count;
 
                   List.iter (fun m ->
-                    Alcotest.(check bool) "migration applied" true m.Migris.Migrator.applied;
+                    Alcotest.(check bool) "migration applied" true m.Migra.Migrator.applied;
                     Alcotest.(check bool) "has timestamp" true (Option.is_some m.applied_at);
                   ) final_status.migrations;
 
@@ -287,23 +287,23 @@ let test_status_mixed () =
       let _f1 = create_migration_with_sections migrations_dir v1 "table1"
         "CREATE TABLE table1 (id SERIAL PRIMARY KEY);" "DROP TABLE table1;" in
 
-      let config = Migris.Migrator.{
+      let config = Migra.Migrator.{
         database_url = db_url;
         migrations_dir;
         verbose = false;
       } in
 
-      Migris.Migrator.run config >>= function
+      Migra.Migrator.run config >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "First run failed: %s" (Migris.Types.show_error err))
+          Alcotest.fail (Printf.sprintf "First run failed: %s" (Migra.Types.show_error err))
       | Ok _ ->
           let v2 = 20240115130000L in
           let _f2 = create_migration_with_sections migrations_dir v2 "table2"
             "CREATE TABLE table2 (id SERIAL PRIMARY KEY);" "DROP TABLE table2;" in
 
-          Migris.Migrator.status config >>= function
+          Migra.Migrator.status config >>= function
           | Error err ->
-              Alcotest.fail (Printf.sprintf "status failed: %s" (Migris.Types.show_error err))
+              Alcotest.fail (Printf.sprintf "status failed: %s" (Migra.Types.show_error err))
           | Ok status ->
               Alcotest.(check int) "2 migrations total" 2 (List.length status.migrations);
               Alcotest.(check int) "1 pending" 1 status.pending_count;

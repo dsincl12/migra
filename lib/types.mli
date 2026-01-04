@@ -26,7 +26,7 @@ type migration_error =
   | ParseError of file_error
   | VersionConflict of int64
 
-(** Top-level error type for all Migris operations *)
+(** Top-level error type for all Migra operations *)
 type error =
   | FileError of file_error
   | DatabaseError of db_error

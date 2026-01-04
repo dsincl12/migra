@@ -4,7 +4,7 @@ open Test_helpers
 
 let test_get_hostname_standard () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migris.Database.get_hostname uri in
+  let result = Migra.Database.get_hostname uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is localhost" "localhost" hostname;
@@ -12,7 +12,7 @@ let test_get_hostname_standard () =
 
 let test_get_hostname_ip () =
   let uri = Uri.of_string "postgresql://192.168.1.100:5432/mydb" in
-  let result = Migris.Database.get_hostname uri in
+  let result = Migra.Database.get_hostname uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is IP" "192.168.1.100" hostname;
@@ -20,7 +20,7 @@ let test_get_hostname_ip () =
 
 let test_get_hostname_ipv6 () =
   let uri = Uri.of_string "postgresql://[::1]:5432/mydb" in
-  let result = Migris.Database.get_hostname uri in
+  let result = Migra.Database.get_hostname uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is ::1" "::1" hostname;
@@ -28,7 +28,7 @@ let test_get_hostname_ipv6 () =
 
 let test_get_hostname_empty () =
   let uri = Uri.of_string "postgresql:///mydb" in
-  let result = Migris.Database.get_hostname uri in
+  let result = Migra.Database.get_hostname uri in
   Alcotest.(check bool) "parse succeeds with empty host" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is empty string" "" hostname;
@@ -36,7 +36,7 @@ let test_get_hostname_empty () =
 
 let test_get_port_standard () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migris.Database.get_port uri in
+  let result = Migra.Database.get_port uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let port = get_ok result in
   Alcotest.(check int) "port is 5432" 5432 port;
@@ -44,7 +44,7 @@ let test_get_port_standard () =
 
 let test_get_port_custom () =
   let uri = Uri.of_string "postgresql://localhost:9999/mydb" in
-  let result = Migris.Database.get_port uri in
+  let result = Migra.Database.get_port uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let port = get_ok result in
   Alcotest.(check int) "port is 9999" 9999 port;
@@ -52,13 +52,13 @@ let test_get_port_custom () =
 
 let test_get_port_missing () =
   let uri = Uri.of_string "postgresql://localhost/mydb" in
-  let result = Migris.Database.get_port uri in
+  let result = Migra.Database.get_port uri in
   Alcotest.(check bool) "parse fails" true (is_error result);
   Lwt.return_unit
 
 let test_get_database_standard () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migris.Database.get_database uri in
+  let result = Migra.Database.get_database uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let db = get_ok result in
   Alcotest.(check string) "database is mydb" "mydb" db;
@@ -66,7 +66,7 @@ let test_get_database_standard () =
 
 let test_get_database_underscores () =
   let uri = Uri.of_string "postgresql://localhost:5432/my_app_db" in
-  let result = Migris.Database.get_database uri in
+  let result = Migra.Database.get_database uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let db = get_ok result in
   Alcotest.(check string) "database is my_app_db" "my_app_db" db;
@@ -74,19 +74,19 @@ let test_get_database_underscores () =
 
 let test_get_database_empty_path () =
   let uri = Uri.of_string "postgresql://localhost:5432" in
-  let result = Migris.Database.get_database uri in
+  let result = Migra.Database.get_database uri in
   Alcotest.(check bool) "parse fails on empty path" true (is_error result);
   Lwt.return_unit
 
 let test_get_database_slash_only () =
   let uri = Uri.of_string "postgresql://localhost:5432/" in
-  let result = Migris.Database.get_database uri in
+  let result = Migra.Database.get_database uri in
   Alcotest.(check bool) "parse fails on slash only" true (is_error result);
   Lwt.return_unit
 
 let test_get_admin_database_url_with_user () =
   let uri = Uri.of_string "postgresql://myuser@localhost:5432/mydb" in
-  let result = Migris.Database.get_admin_database_url uri in
+  let result = Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
   Alcotest.(check string) "admin URL correct"
@@ -95,7 +95,7 @@ let test_get_admin_database_url_with_user () =
 
 let test_get_admin_database_url_no_user () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migris.Database.get_admin_database_url uri in
+  let result = Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
   Alcotest.(check string) "admin URL correct"
@@ -104,7 +104,7 @@ let test_get_admin_database_url_no_user () =
 
 let test_get_admin_database_url_with_password () =
   let uri = Uri.of_string "postgresql://myuser:mypass@localhost:5432/mydb" in
-  let result = Migris.Database.get_admin_database_url uri in
+  let result = Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
   Alcotest.(check string) "admin URL has username only"
@@ -113,7 +113,7 @@ let test_get_admin_database_url_with_password () =
 
 let test_get_admin_database_url_default_port () =
   let uri = Uri.of_string "postgresql://myuser@localhost/mydb" in
-  let result = Migris.Database.get_admin_database_url uri in
+  let result = Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
   Alcotest.(check string) "admin URL uses default port"
@@ -125,7 +125,7 @@ let get_test_admin_url () =
   | None -> "postgresql://localhost:5432/postgres"
   | Some url ->
       let uri = Uri.of_string url in
-      match Migris.Database.get_admin_database_url uri with
+      match Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri with
       | Ok admin_url -> admin_url
       | Error _ -> "postgresql://localhost:5432/postgres"
 
@@ -142,11 +142,11 @@ let test_create_database () =
   in
   let db_url = Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name in
 
-  Migris.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
-      Alcotest.fail (Printf.sprintf "create_database failed: %s" (Migris.Types.show_error msg))
+      Alcotest.fail (Printf.sprintf "create_database failed: %s" (Migra.Types.show_error msg))
   | Ok () ->
-      Migris.Database.drop_database db_url >>= fun _ ->
+      Migra.Database.drop_database db_url >>= fun _ ->
       Lwt.return_unit
 
 let test_create_database_idempotent () =
@@ -162,15 +162,15 @@ let test_create_database_idempotent () =
   in
   let db_url = Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name in
 
-  Migris.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
-      Alcotest.fail (Printf.sprintf "First create_database failed: %s" (Migris.Types.show_error msg))
+      Alcotest.fail (Printf.sprintf "First create_database failed: %s" (Migra.Types.show_error msg))
   | Ok () ->
-      Migris.Database.create_database db_url >>= function
+      Migra.Database.create_database db_url >>= function
       | Error msg ->
-          Alcotest.fail (Printf.sprintf "Second create_database failed: %s" (Migris.Types.show_error msg))
+          Alcotest.fail (Printf.sprintf "Second create_database failed: %s" (Migra.Types.show_error msg))
       | Ok () ->
-          Migris.Database.drop_database db_url >>= fun _ ->
+          Migra.Database.drop_database db_url >>= fun _ ->
           Lwt.return_unit
 
 let test_drop_database () =
@@ -186,13 +186,13 @@ let test_drop_database () =
   in
   let db_url = Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name in
 
-  Migris.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
-      Alcotest.fail (Printf.sprintf "create_database failed: %s" (Migris.Types.show_error msg))
+      Alcotest.fail (Printf.sprintf "create_database failed: %s" (Migra.Types.show_error msg))
   | Ok () ->
-      Migris.Database.drop_database db_url >>= function
+      Migra.Database.drop_database db_url >>= function
       | Error msg ->
-          Alcotest.fail (Printf.sprintf "drop_database failed: %s" (Migris.Types.show_error msg))
+          Alcotest.fail (Printf.sprintf "drop_database failed: %s" (Migra.Types.show_error msg))
       | Ok () ->
           Lwt.return_unit
 
@@ -209,24 +209,24 @@ let test_drop_database_idempotent () =
   in
   let db_url = Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name in
 
-  Migris.Database.drop_database db_url >>= function
+  Migra.Database.drop_database db_url >>= function
   | Error msg ->
-      Alcotest.fail (Printf.sprintf "drop_database failed on non-existent DB: %s" (Migris.Types.show_error msg))
+      Alcotest.fail (Printf.sprintf "drop_database failed on non-existent DB: %s" (Migra.Types.show_error msg))
   | Ok () ->
       Lwt.return_unit
 
 let test_connect_db () =
   with_test_db_pooled "db_connect" (fun db_url ->
-    Migris.Database.connect_db db_url >>= function
+    Migra.Database.connect_db db_url >>= function
     | Error msg ->
-        Alcotest.fail (Printf.sprintf "connect_db failed: %s" (Migris.Types.show_error msg))
+        Alcotest.fail (Printf.sprintf "connect_db failed: %s" (Migra.Types.show_error msg))
     | Ok _db ->
         Lwt.return_unit
   )
 
 let test_connect_db_nonexistent () =
-  let db_url = "postgresql://localhost:5432/migris_db_that_does_not_exist_12345" in
-  Migris.Database.connect_db db_url >>= function
+  let db_url = "postgresql://localhost:5432/migra_db_that_does_not_exist_12345" in
+  Migra.Database.connect_db db_url >>= function
   | Ok _db ->
       Alcotest.fail "Expected connection to fail on non-existent database"
   | Error _msg ->
@@ -234,11 +234,11 @@ let test_connect_db_nonexistent () =
 
 let test_with_db () =
   with_test_db_pooled "db_with" (fun db_url ->
-    Migris.Database.with_db db_url (fun _db ->
+    Migra.Database.with_db db_url (fun _db ->
       Lwt.return 42
     ) >>= function
     | Error msg ->
-        Alcotest.fail (Printf.sprintf "with_db failed: %s" (Migris.Types.show_error msg))
+        Alcotest.fail (Printf.sprintf "with_db failed: %s" (Migra.Types.show_error msg))
     | Ok result ->
         Alcotest.(check int) "function result" 42 result;
         Lwt.return_unit
@@ -246,13 +246,13 @@ let test_with_db () =
 
 let test_with_db_exception () =
   with_test_db_pooled "db_with_exception" (fun db_url ->
-    Migris.Database.with_db db_url (fun _db ->
+    Migra.Database.with_db db_url (fun _db ->
       Lwt.fail_with "Intentional test failure"
     ) >>= function
     | Ok _ ->
         Alcotest.fail "Expected with_db to catch exception"
     | Error err ->
-        let msg = Migris.Types.show_error err in
+        let msg = Migra.Types.show_error err in
         Alcotest.(check bool) "error message contains failure"
           true (String.length msg > 0);
         Lwt.return_unit
@@ -260,15 +260,15 @@ let test_with_db_exception () =
 
 let test_initialize () =
   with_test_db_pooled "db_initialize" (fun db_url ->
-    Migris.Database.connect_db db_url >>= function
+    Migra.Database.connect_db db_url >>= function
     | Error msg ->
-        Alcotest.fail (Printf.sprintf "connect_db failed: %s" (Migris.Types.show_error msg))
+        Alcotest.fail (Printf.sprintf "connect_db failed: %s" (Migra.Types.show_error msg))
     | Ok db ->
-        Migris.Runner.ensure_migrations_table db >>= function
+        Migra.Runner.ensure_migrations_table Migra.Dialect.PostgreSQL db >>= function
         | Error err ->
             Alcotest.fail (Printf.sprintf "create_table failed: %s" (Caqti_error.show err))
         | Ok () ->
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "Query after initialize failed: %s" (Caqti_error.show err))
             | Ok versions ->

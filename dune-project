@@ -1,21 +1,21 @@
 (lang dune 3.12)
 
-(name migris)
+(name migra)
 
 (generate_opam_files true)
 
 (source
- (github dsincl12/migris))
+ (github dsincl12/migra))
 
 (authors "David Sinclair")
 
 (license MIT)
 
-(documentation https://github.com/dsincl12/migris)
+(documentation https://github.com/dsincl12/migra)
 
 (package
- (name migris)
- (synopsis "A simple database migration tool for OCaml")
+ (name migra)
+ (synopsis "A database migration tool for OCaml supporting PostgreSQL, MariaDB, and SQLite")
  (depends
    (ocaml (>= 4.14.0))
    (dune (>= 3.12))
@@ -26,9 +26,11 @@
    (caqti (>= 2.0.0))
    (caqti-lwt (>= 2.0.0))
    (caqti-driver-postgresql (>= 2.0.0))
+   (caqti-driver-mariadb (>= 2.0.0))
+   (caqti-driver-sqlite3 (>= 2.0.0))
    (uri (>= 4.4.0))
    (cmdliner (>= 1.2.0)))
  (tags
-  (topics database migrations postgresql)))
+  (topics database migrations postgresql mariadb mysql sqlite)))
 
 ; See the complete stanza docs at https://dune.readthedocs.io/en/stable/dune-files.html#dune-project

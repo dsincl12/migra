@@ -7,4 +7,5 @@ let () =
     "Discovery", Test_discovery.suite;
     "SQL Parser", Test_sql_parser.suite;
     "Types", Test_types.suite;
+    "Dialect", Test_dialect.suite;
   ]

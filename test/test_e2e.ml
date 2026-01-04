@@ -3,10 +3,10 @@ open Lwt.Infix
 open Test_helpers
 
 let with_initialized_db db_url f =
-  Migris.Database.connect_db db_url >>= function
-  | Error msg -> Lwt.fail_with (Printf.sprintf "Failed to connect: %s" (Migris.Types.show_error msg))
+  Migra.Database.connect_db db_url >>= function
+  | Error msg -> Lwt.fail_with (Printf.sprintf "Failed to connect: %s" (Migra.Types.show_error msg))
   | Ok db ->
-      Migris.Runner.ensure_migrations_table db >>= function
+      Migra.Runner.ensure_migrations_table Migra.Dialect.PostgreSQL db >>= function
       | Error err -> Lwt.fail_with (Printf.sprintf "Failed to create_table: %s" (Caqti_error.show err))
       | Ok () -> f db
 
@@ -24,16 +24,16 @@ let test_fresh_setup_workflow () =
         "DROP TABLE posts;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error msg ->
-            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migris.Types.show_error msg))
+            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
         | Ok results ->
             Alcotest.(check int) "2 migrations executed" 2 (List.length results);
             List.iter (fun result ->
-              Alcotest.(check bool) "migration succeeded" true (Migris.Runner.is_success result)
+              Alcotest.(check bool) "migration succeeded" true (Migra.Runner.is_success result)
             ) results;
 
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
             | Ok versions ->
@@ -75,9 +75,9 @@ let test_incremental_migrations () =
         "CREATE TABLE table2 (id SERIAL PRIMARY KEY);" "DROP TABLE table2;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error msg ->
-            Alcotest.fail (Printf.sprintf "First run_pending failed: %s" (Migris.Types.show_error msg))
+            Alcotest.fail (Printf.sprintf "First run_pending failed: %s" (Migra.Types.show_error msg))
         | Ok results ->
             Alcotest.(check int) "2 migrations in first batch" 2 (List.length results);
 
@@ -85,15 +85,15 @@ let test_incremental_migrations () =
             let _f3 = create_migration_with_sections migrations_dir v3 "table3"
               "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
-            Migris.Runner.run_pending db migrations_dir >>= function
+            Migra.Runner.run_pending db migrations_dir >>= function
             | Error msg ->
-                Alcotest.fail (Printf.sprintf "Second run_pending failed: %s" (Migris.Types.show_error msg))
+                Alcotest.fail (Printf.sprintf "Second run_pending failed: %s" (Migra.Types.show_error msg))
             | Ok results2 ->
                 Alcotest.(check int) "1 migration in second batch" 1 (List.length results2);
                 Alcotest.(check int64_testable) "v3 was executed"
-                  v3 (Migris.Runner.migration_of_result (List.hd results2)).Migris.Migration.version;
+                  v3 (Migra.Runner.migration_of_result (List.hd results2)).Migra.Migration.version;
 
-                Migris.Runner.get_applied_versions db >>= function
+                Migra.Runner.get_applied_versions db >>= function
                 | Error err ->
                     Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
                 | Ok versions ->
@@ -118,17 +118,17 @@ let test_rollback_workflow () =
         "CREATE TABLE comments (id SERIAL PRIMARY KEY);" "DROP TABLE comments;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error msg ->
-            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migris.Types.show_error msg))
+            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
         | Ok _ ->
-            Migris.Runner.rollback_step ~migrations_dir db 1 >>= function
+            Migra.Runner.rollback_step ~migrations_dir db 1 >>= function
             | Error msg ->
-                Alcotest.fail (Printf.sprintf "rollback_step failed: %s" (Migris.Types.show_error msg))
+                Alcotest.fail (Printf.sprintf "rollback_step failed: %s" (Migra.Types.show_error msg))
             | Ok rollback_results ->
                 Alcotest.(check int) "1 migration rolled back" 1 (List.length rollback_results);
 
-                Migris.Runner.get_applied_versions db >>= function
+                Migra.Runner.get_applied_versions db >>= function
                 | Error err ->
                     Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
                 | Ok versions ->
@@ -176,17 +176,17 @@ let test_rollback_to_workflow () =
         "CREATE TABLE t4 (id SERIAL PRIMARY KEY);" "DROP TABLE t4;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error msg ->
-            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migris.Types.show_error msg))
+            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
         | Ok _ ->
-            Migris.Runner.rollback_to ~migrations_dir db v2 >>= function
+            Migra.Runner.rollback_to ~migrations_dir db v2 >>= function
             | Error msg ->
-                Alcotest.fail (Printf.sprintf "rollback_to failed: %s" (Migris.Types.show_error msg))
+                Alcotest.fail (Printf.sprintf "rollback_to failed: %s" (Migra.Types.show_error msg))
             | Ok rollback_results ->
                 Alcotest.(check int) "2 migrations rolled back" 2 (List.length rollback_results);
 
-                Migris.Runner.get_applied_versions db >>= function
+                Migra.Runner.get_applied_versions db >>= function
                 | Error err ->
                     Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
                 | Ok versions ->
@@ -210,29 +210,29 @@ let test_reset_workflow () =
         "CREATE TABLE posts (id SERIAL PRIMARY KEY);" "DROP TABLE posts;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error msg ->
-            Alcotest.fail (Printf.sprintf "Initial run_pending failed: %s" (Migris.Types.show_error msg))
+            Alcotest.fail (Printf.sprintf "Initial run_pending failed: %s" (Migra.Types.show_error msg))
         | Ok _ ->
-            Migris.Runner.rollback_all ~migrations_dir db >>= function
+            Migra.Runner.rollback_all ~migrations_dir db >>= function
             | Error msg ->
-                Alcotest.fail (Printf.sprintf "rollback_all failed: %s" (Migris.Types.show_error msg))
+                Alcotest.fail (Printf.sprintf "rollback_all failed: %s" (Migra.Types.show_error msg))
             | Ok rollback_results ->
                 Alcotest.(check int) "2 migrations rolled back" 2 (List.length rollback_results);
 
-                Migris.Runner.get_applied_versions db >>= function
+                Migra.Runner.get_applied_versions db >>= function
                 | Error err ->
                     Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
                 | Ok versions ->
                     Alcotest.(check int) "no versions remain" 0 (List.length versions);
 
-                    Migris.Runner.run_pending db migrations_dir >>= function
+                    Migra.Runner.run_pending db migrations_dir >>= function
                     | Error msg ->
-                        Alcotest.fail (Printf.sprintf "Second run_pending failed: %s" (Migris.Types.show_error msg))
+                        Alcotest.fail (Printf.sprintf "Second run_pending failed: %s" (Migra.Types.show_error msg))
                     | Ok results ->
                         Alcotest.(check int) "2 migrations reapplied" 2 (List.length results);
 
-                        Migris.Runner.get_applied_versions db >>= function
+                        Migra.Runner.get_applied_versions db >>= function
                         | Error err ->
                             Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
                         | Ok final_versions ->
@@ -257,36 +257,36 @@ let test_failure_recovery () =
         "CREATE TABLE table3 (id SERIAL PRIMARY KEY);" "DROP TABLE table3;" in
 
       with_initialized_db db_url (fun db ->
-        Migris.Runner.run_pending db migrations_dir >>= function
+        Migra.Runner.run_pending db migrations_dir >>= function
         | Error msg ->
-            Alcotest.fail (Printf.sprintf "run_pending failed unexpectedly: %s" (Migris.Types.show_error msg))
+            Alcotest.fail (Printf.sprintf "run_pending failed unexpectedly: %s" (Migra.Types.show_error msg))
         | Ok results ->
             Alcotest.(check int) "2 results (v1 success, v2 failure)" 2 (List.length results);
-            Alcotest.(check bool) "v1 succeeded" true (Migris.Runner.is_success (List.nth results 0));
-            Alcotest.(check bool) "v2 failed" false (Migris.Runner.is_success (List.nth results 1));
+            Alcotest.(check bool) "v1 succeeded" true (Migra.Runner.is_success (List.nth results 0));
+            Alcotest.(check bool) "v2 failed" false (Migra.Runner.is_success (List.nth results 1));
 
-            Migris.Runner.get_applied_versions db >>= function
+            Migra.Runner.get_applied_versions db >>= function
             | Error err ->
                 Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
             | Ok versions ->
                 Alcotest.(check int) "only v1 recorded" 1 (List.length versions);
                 Alcotest.(check int64_testable) "v1 recorded" v1 (List.nth versions 0);
 
-                let f2_path = Filename.concat migrations_dir (Migris.Migration.make_filename v2 "bad_migration") in
+                let f2_path = Filename.concat migrations_dir (Migra.Migration.make_filename v2 "bad_migration") in
                 let oc = open_out f2_path in
                 output_string oc "-- +migrate up\nCREATE TABLE table2 (id SERIAL PRIMARY KEY);\n\n-- +migrate down\nDROP TABLE table2;\n";
                 close_out oc;
 
-                Migris.Runner.run_pending db migrations_dir >>= function
+                Migra.Runner.run_pending db migrations_dir >>= function
                 | Error msg ->
-                    Alcotest.fail (Printf.sprintf "Second run_pending failed: %s" (Migris.Types.show_error msg))
+                    Alcotest.fail (Printf.sprintf "Second run_pending failed: %s" (Migra.Types.show_error msg))
                 | Ok results2 ->
                     Alcotest.(check int) "2 migrations in recovery" 2 (List.length results2);
                     List.iter (fun result ->
-                      Alcotest.(check bool) "migration succeeded" true (Migris.Runner.is_success result)
+                      Alcotest.(check bool) "migration succeeded" true (Migra.Runner.is_success result)
                     ) results2;
 
-                    Migris.Runner.get_applied_versions db >>= function
+                    Migra.Runner.get_applied_versions db >>= function
                     | Error err ->
                         Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
                     | Ok final_versions ->
@@ -309,19 +309,19 @@ let test_database_lifecycle () =
   in
   let db_url = Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name in
 
-  Migris.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
-      Alcotest.fail (Printf.sprintf "create_database failed: %s" (Migris.Types.show_error msg))
+      Alcotest.fail (Printf.sprintf "create_database failed: %s" (Migra.Types.show_error msg))
   | Ok () ->
-      Migris.Database.drop_database db_url >>= function
+      Migra.Database.drop_database db_url >>= function
       | Error msg ->
-          Alcotest.fail (Printf.sprintf "drop_database failed: %s" (Migris.Types.show_error msg))
+          Alcotest.fail (Printf.sprintf "drop_database failed: %s" (Migra.Types.show_error msg))
       | Ok () ->
-          Migris.Database.create_database db_url >>= function
+          Migra.Database.create_database db_url >>= function
           | Error msg ->
-              Alcotest.fail (Printf.sprintf "Second create_database failed: %s" (Migris.Types.show_error msg))
+              Alcotest.fail (Printf.sprintf "Second create_database failed: %s" (Migra.Types.show_error msg))
           | Ok () ->
-              Migris.Database.drop_database db_url >>= fun _ ->
+              Migra.Database.drop_database db_url >>= fun _ ->
               Lwt.return_unit
 
 let suite = [

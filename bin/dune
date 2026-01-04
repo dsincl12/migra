@@ -1,6 +1,6 @@
 (executable
- (public_name migris)
+ (public_name migra)
  (name main)
  (modules main commands)
- (libraries migris lwt lwt.unix caqti caqti-lwt caqti-lwt.unix caqti-driver-postgresql cmdliner)
+ (libraries migra lwt lwt.unix caqti caqti-lwt caqti-lwt.unix caqti-driver-postgresql cmdliner)
  (preprocess (pps lwt_ppx)))
