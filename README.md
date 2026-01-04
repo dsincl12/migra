@@ -1,10 +1,18 @@
 # Migra
 
-A database migration tool and library for OCaml supporting PostgreSQL, MariaDB/MySQL, and SQLite.
+[![OCaml](https://img.shields.io/badge/OCaml-%23EC6813.svg?style=flat&logo=ocaml&logoColor=white)](https://ocaml.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**A database migration tool and library for OCaml supporting PostgreSQL, MariaDB/MySQL, and SQLite.**
 
 Write plain SQL migrations with up/down sections. Run them with transaction safety. Roll them back when needed. Use the CLI for day-to-day development or the library for programmatic control.
 
-**Zero-configuration database detection** - just set `DATABASE_URL` and Migra automatically detects whether you're using PostgreSQL, MariaDB, or SQLite.
+**Key Features:**
+- Zero-configuration database detection - just set `DATABASE_URL` and Migra automatically detects your database type
+- Transaction safety - automatic rollback on failure, no partial migrations
+- Both CLI and Library - use the CLI for development, embed the library in your applications
+- Flexible rollbacks - rollback by steps, to a version, or all at once
+- Production-ready - battle-tested error handling and logging
 
 ## Features
 
@@ -28,14 +36,21 @@ Write plain SQL migrations with up/down sections. Run them with transaction safe
 - [Supported Databases](#supported-databases)
 - [CLI Quick Start](#cli-quick-start)
 - [CLI Commands](#cli-commands)
-- [Using as a Library](#using-as-a-library)
+- [Working Example](#working-example)
 - [Configuration](#configuration)
+- [Using as a Library](#using-as-a-library)
+  - [Quick Start: Application Integration](#quick-start-application-integration)
+  - [API Reference](#api-reference)
+  - [Error Handling](#error-handling)
 - [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Version Compatibility](#version-compatibility)
+- [License](#license)
 
 ## Installation
 
-**Prerequisites:** OCaml ≥ 5.0, Opam ≥ 2.0, Dune ≥ 2.7
+**Prerequisites:** OCaml ≥ 5.4.0, Opam ≥ 2.0, Dune ≥ 3.20
 
 ### Quick Start
 
@@ -579,7 +594,7 @@ export DATABASE_URL="sqlite3://:memory:"
 
 ## Using as a Library
 
-Migra can be embedded in your OCaml applications for programmatic migration control.
+Migra can be embedded in your OCaml applications for programmatic migration control. This is ideal for running migrations automatically on application startup or integrating migrations into your deployment pipeline.
 
 ### Installation
 
@@ -589,7 +604,7 @@ Add to your `dune` file:
 ```dune
 (executable
  (name my_app)
- (libraries migra caqti-driver-postgresql))  ; Add only the drivers you need
+ (libraries migra lwt lwt.unix caqti-driver-postgresql))  ; Add only the drivers you need
 ```
 
 Or in `dune-project`:
@@ -598,6 +613,7 @@ Or in `dune-project`:
  (name my_app)
  (depends
    (migra (>= 0.1.0))
+   (lwt (>= 5.6.0))
    (caqti-driver-postgresql (>= 2.0.0))))  ; Install only what you use
 ```
 
@@ -608,28 +624,50 @@ Or in `dune-project`:
 
 You can install multiple drivers if your app supports multiple databases.
 
-### Basic Usage
+### Quick Start: Application Integration
+
+Here's a complete example showing how to run migrations on application startup:
 
 ```ocaml
 open Lwt.Infix
 
+(* Get database URL from environment or use default *)
+let database_url =
+  match Sys.getenv_opt "DATABASE_URL" with
+  | Some url -> url
+  | None -> "sqlite3://./app.db"
+
+(* Run migrations on startup *)
 let run_migrations () =
   let config = Migra.Migrator.{
-    database_url = "postgresql://localhost/myapp";
+    database_url;
     migrations_dir = "migrations";
-    verbose = false;
+    verbose = true;
   } in
 
-  Lwt_main.run (
-    Migra.Migrator.run config >>= function
-    | Ok result ->
-        Printf.printf "Successfully ran %d migrations\n" result.success_count;
+  Migra.Migrator.run config >>= function
+  | Error err ->
+      Lwt_io.eprintlf "Migration failed: %s" (Migra.Types.show_error err) >>= fun () ->
+      Lwt.fail_with "Database migration failed"
+  | Ok result ->
+      Lwt_io.printlf "Migrations complete: %d succeeded, %d failed"
+        result.success_count result.failure_count >>= fun () ->
+      if result.failure_count > 0 then
+        Lwt.fail_with "Some migrations failed"
+      else
         Lwt.return_unit
-    | Error msg ->
-        Printf.eprintf "Migration failed: %s\n" msg;
-        exit 1
-  )
+
+(* Main application *)
+let () =
+  (* Run migrations first *)
+  Lwt_main.run (run_migrations ());
+
+  (* Then start your application *)
+  print_endline "Starting application...";
+  (* Your app code here *)
 ```
+
+This pattern ensures your database is always up-to-date when your application starts.
 
 ### Running Migrations
 
@@ -645,26 +683,38 @@ Migra.Migrator.run config >>= function
 | Ok result ->
     Printf.printf "Migrations: %d succeeded, %d failed\n"
       result.success_count result.failure_count;
+
+    (* Print details for each migration *)
     List.iter (fun m ->
       if m.Migra.Migrator.success then
-        Printf.printf " %Ld: %s\n" m.version m.description
+        Printf.printf "   %Ld: %s (%.3fs)\n"
+          m.version m.description
+          (Option.value ~default:0.0 m.elapsed_seconds)
       else
-        Printf.printf " %Ld: %s - %s\n"
+        Printf.printf "   %Ld: %s - %s\n"
           m.version m.description
           (Option.value ~default:"unknown error" m.error)
     ) result.migrations;
     Lwt.return_unit
-| Error msg ->
-    Printf.eprintf "Error: %s\n" msg;
+| Error err ->
+    Printf.eprintf "Migration error: %s\n" (Migra.Types.show_error err);
     Lwt.return_unit
 ```
 
 ### Rolling Back Migrations
 
 ```ocaml
+open Lwt.Infix
+
 (* Rollback last migration *)
 let rollback_one config =
-  Migra.Migrator.rollback config (Step 1)
+  Migra.Migrator.rollback config (Step 1) >>= function
+  | Ok result ->
+      Printf.printf "Rolled back %d migrations\n" result.success_count;
+      Lwt.return_unit
+  | Error err ->
+      Printf.eprintf "Rollback failed: %s\n" (Migra.Types.show_error err);
+      Lwt.return_unit
 
 (* Rollback last 3 migrations *)
 let rollback_three config =
@@ -687,37 +737,166 @@ Migra.Migrator.status config >>= function
     Printf.printf "Database: %s\n" status.database_url;
     Printf.printf "Applied: %d | Pending: %d\n"
       status.applied_count status.pending_count;
+    Printf.printf "\nMigrations:\n";
 
     List.iter (fun m ->
-      let status_str = if m.Migra.Migrator.applied then "up" else "down" in
-      Printf.printf "  [%s] %Ld: %s\n"
-        status_str m.version m.description
+      let status_str = if m.Migra.Migrator.applied then " up  " else " down" in
+      let timestamp = match m.applied_at with
+        | Some t -> Printf.sprintf " (applied: %s)" t
+        | None -> ""
+      in
+      Printf.printf "  [%s] %Ld: %s%s\n"
+        status_str m.version m.description timestamp
     ) status.migrations;
     Lwt.return_unit
-| Error msg ->
-    Printf.eprintf "Error: %s\n" msg;
+| Error err ->
+    Printf.eprintf "Status check failed: %s\n" (Migra.Types.show_error err);
     Lwt.return_unit
 ```
 
+### Complete Example: Web Application with Auto-Migrations
+
+This example demonstrates integrating Migra with a web framework (using Dream as an example):
+
+```ocaml
+open Lwt.Infix
+
+let database_url =
+  match Sys.getenv_opt "DATABASE_URL" with
+  | Some url -> url
+  | None -> "sqlite3://./app.db"
+
+let run_migrations () =
+  let config = Migra.Migrator.{
+    database_url;
+    migrations_dir = "migrations";
+    verbose = true;
+  } in
+
+  Migra.Migrator.run config >>= function
+  | Error err ->
+      Lwt_io.eprintlf "Migration failed: %s" (Migra.Types.show_error err) >>= fun () ->
+      Lwt.fail_with "Database migration failed"
+  | Ok result ->
+      Lwt_io.printlf "Migrations complete: %d succeeded, %d failed"
+        result.success_count result.failure_count >>= fun () ->
+      if result.failure_count > 0 then
+        Lwt.fail_with "Some migrations failed"
+      else
+        Lwt.return_unit
+
+let () =
+  (* Run migrations before starting the server *)
+  Lwt_main.run (run_migrations ());
+
+  (* Start your web application *)
+  Dream.run ~port:8080
+  @@ Dream.logger
+  @@ Dream.router [
+    Dream.get "/" (fun _ ->
+      Dream.json {|{"status": "ready"}|});
+  ]
+```
+
+**To test this integration:**
+
+1. Create a new project with migrations directory:
+   ```bash
+   mkdir -p my_app/migrations
+   cd my_app
+   ```
+
+2. Add Migra to your dependencies and install drivers:
+   ```bash
+   opam install migra caqti-driver-sqlite3 dream
+   ```
+
+3. Generate a migration using the CLI:
+   ```bash
+   export DATABASE_URL="sqlite3://./app.db"
+   migra generate create_users
+   ```
+
+4. Edit the generated migration file and add your schema
+
+5. Build and run your application:
+   ```bash
+   dune build
+   dune exec my_app
+   ```
+
+The migrations will run automatically before your application starts!
+
+For a complete working example, see [TESTING_LOCALLY.md](TESTING_LOCALLY.md).
+
 ### API Reference
 
-The library provides three main functions:
+The library provides three main functions in the `Migra.Migrator` module:
 
-**`Migra.Migrator.run`** - Execute pending migrations
-- Returns: `(operation_result, string) Lwt_result.t`
-- Runs all pending migrations in chronological order
+**`run : config -> (operation_result, Types.error) Lwt_result.t`**
+- Execute all pending migrations
+- Runs migrations in chronological order
+- Stops at first failure
+- Returns detailed results for each migration
+
+**`rollback : config -> rollback_strategy -> (operation_result, Types.error) Lwt_result.t`**
+- Rollback migrations according to strategy
+- Strategies: `Step of int`, `To of int64`, `All`
+- Executes down SQL in reverse chronological order
 - Stops at first failure
 
-**`Migra.Migrator.rollback`** - Rollback migrations
-- Strategies: `Step of int`, `To of int64`, `All`
-- Returns: `(operation_result, string) Lwt_result.t`
-- Executes down SQL in reverse chronological order
-
-**`Migra.Migrator.status`** - Inspect migration status
-- Returns: `(status_result, string) Lwt_result.t`
+**`status : config -> (status_result, Types.error) Lwt_result.t`**
+- Inspect current migration status
 - Lists all migrations with applied/pending status
+- Returns timestamps for applied migrations
 
-For database lifecycle (create/drop databases) and file generation, use the CLI commands.
+**Configuration:**
+```ocaml
+type config = {
+  database_url : string;      (* Database connection URL *)
+  migrations_dir : string;    (* Directory containing .sql files *)
+  verbose : bool;             (* Enable SQL statement logging *)
+}
+```
+
+**Rollback strategies:**
+```ocaml
+type rollback_strategy =
+  | Step of int         (* Rollback last N migrations *)
+  | To of int64         (* Rollback to version (exclusive) *)
+  | All                 (* Rollback all migrations *)
+```
+
+### Error Handling
+
+All Migra functions return `Lwt_result.t` types. Use `Migra.Types.show_error` to get human-readable error messages:
+
+```ocaml
+Migra.Migrator.run config >>= function
+| Ok result -> (* Handle success *)
+| Error err ->
+    Lwt_io.eprintlf "Error: %s" (Migra.Types.show_error err)
+```
+
+Common error types:
+- Connection failures
+- Invalid migration file format
+- SQL execution errors
+- Missing migrations directory
+- Invalid database URL
+
+### CLI vs Library
+
+**Use the CLI for:**
+- Database lifecycle operations (`init`, `drop`, `reset`, `setup`)
+- Generating migration files (`generate`)
+- Interactive development and testing
+
+**Use the Library for:**
+- Running migrations on application startup
+- Integrating migrations into deployment pipelines
+- Programmatic migration control
+- Custom tooling and scripts
 
 ## Troubleshooting
 
@@ -785,9 +964,57 @@ Make sure your `DATABASE_URL` starts with one of:
 **SQLite in-memory database seems empty:**
 SQLite `:memory:` databases only persist for the duration of the connection. Each new connection gets a fresh database. This is intentional and perfect for testing!
 
+## Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. **Report bugs** - Open an issue describing the bug and how to reproduce it
+2. **Suggest features** - Open an issue describing the feature and use case
+3. **Submit pull requests** - Fork the repo, make your changes, and submit a PR
+
+**Development setup:**
+```bash
+git clone https://github.com/dsincl12/migra.git
+cd migra
+opam install . --deps-only --with-test
+dune build
+dune runtest
+```
+
+**Running tests:**
+```bash
+# Unit tests
+dune runtest
+
+# Integration tests (requires PostgreSQL, MariaDB, and SQLite)
+export DATABASE_URL="postgresql://localhost/migra_test"
+dune runtest
+```
+
+## Version Compatibility
+
+- OCaml: ≥ 5.4.0
+- Dune: ≥ 3.20
+- Caqti: ≥ 2.0.0
+- Lwt: ≥ 5.6.0
+
+**Database versions tested:**
+- PostgreSQL: 14, 15, 16
+- MariaDB: 10.6, 10.11, 11.0
+- MySQL: 8.0
+- SQLite: 3.40+
+
 ## License
 
-See LICENSE file.
+MIT License - see [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2024 David Sinclair
+
+## Links
+
+- GitHub: [https://github.com/dsincl12/migra](https://github.com/dsincl12/migra)
+- Documentation: [https://github.com/dsincl12/migra](https://github.com/dsincl12/migra)
+- Issues: [https://github.com/dsincl12/migra/issues](https://github.com/dsincl12/migra/issues)
 
 ---
 
