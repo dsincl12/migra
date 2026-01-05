@@ -4,6 +4,9 @@ open Lwt.Infix
 open Caqti_request.Infix
 open Caqti_type.Std
 
+let src = Logs.Src.create "migra.runner" ~doc:"Migration runner"
+module Log = (val Logs.src_log src : Logs.LOG)
+
 type migration_record = {
   version : int64;
   created_at : string;
@@ -27,7 +30,7 @@ let error_of_result = function
 
 let log_verbose verbose msg =
   if verbose then
-    Lwt_io.eprintlf "[VERBOSE] %s" msg
+    Logs_lwt.info (fun m -> m "%s" msg)
   else
     Lwt.return_unit
 

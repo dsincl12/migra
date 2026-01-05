@@ -1,6 +1,9 @@
 
 open Lwt.Infix
 
+(* Force loading of Logging module to auto-initialize logger *)
+let () = ignore (Logging.setup)
+
 type config = {
   database_url : string;
   migrations_dir : string;
