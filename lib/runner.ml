@@ -1,7 +1,13 @@
 (** Migration execution engine with transaction support. *)
 
+open Lwt.Infix
 open Caqti_request.Infix
 open Caqti_type.Std
+
+type migration_record = {
+  version : int64;
+  created_at : string;
+}
 
 type execution_result =
   | Success of Migration.t
@@ -25,36 +31,10 @@ let log_verbose verbose msg =
   else
     Lwt.return_unit
 
-(** {1 Schema Migrations Table Management}
+(** {1 SQL Queries}
 
-    Internal functions for managing the [schema_migrations] table,
-    which tracks which migrations have been applied to the database.
-
-    {2 Database Schema}
-
-    The [schema_migrations] table has the following structure:
-    {v
-      CREATE TABLE schema_migrations (
-        version BIGINT PRIMARY KEY,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
-    v}
-
-    - [version]: 14-digit timestamp (YYYYMMDDHHMMSS) identifying the migration
-    - [created_at]: Timestamp when the migration was applied
-
-    {2 Transaction Safety}
-
-    These operations should always be called within transactions
-    to ensure atomicity between SQL execution and version recording.
+    Prepared Caqti queries for schema_migrations table operations.
 *)
-
-open Lwt.Infix
-
-type migration_record = {
-  version : int64;
-  created_at : string;
-}
 
 let migration_exists_query =
   (int64 ->? int64)
@@ -95,6 +75,30 @@ let get_latest_version_query =
     SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1
   |sql}
 
+(** {1 Schema Migrations Table Management}
+
+    Functions for managing the [schema_migrations] table,
+    which tracks which migrations have been applied to the database.
+
+    {2 Database Schema}
+
+    The [schema_migrations] table has the following structure:
+    {v
+      CREATE TABLE schema_migrations (
+        version BIGINT PRIMARY KEY,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    v}
+
+    - [version]: 14-digit timestamp (YYYYMMDDHHMMSS) identifying the migration
+    - [created_at]: Timestamp when the migration was applied
+
+    {2 Transaction Safety}
+
+    These operations should always be called within transactions
+    to ensure atomicity between SQL execution and version recording.
+*)
+
 let ensure_migrations_table (dialect : Dialect.t) (db : Types.db_conn) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
@@ -125,12 +129,15 @@ let get_applied_versions (db : Types.db_conn) : (int64 list, [> Caqti_error.t]) 
 
 let get_applied_records (dialect : Dialect.t) (db : Types.db_conn) : (migration_record list, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  let open Lwt.Infix in
   let query = get_all_records_query dialect in
   Db.collect_list query () >|= function
   | Ok rows ->
       Ok (List.map (fun (version, created_at) -> { version; created_at }) rows)
   | Error e -> Error e
+
+let get_latest_version (db : Types.db_conn) : (int64 option, [> Caqti_error.t]) Lwt_result.t =
+  let module Db = (val db : Caqti_lwt.CONNECTION) in
+  Db.find_opt get_latest_version_query ()
 
 let add_migration (db : Types.db_conn) (version : int64) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -140,16 +147,11 @@ let remove_migration (db : Types.db_conn) (version : int64) : (unit, [> Caqti_er
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   Db.exec delete_migration_query version
 
-let get_latest_version (db : Types.db_conn) : (int64 option, [> Caqti_error.t]) Lwt_result.t =
-  let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.find_opt get_latest_version_query ()
-
 (** Execute raw SQL within a connection
     Handles multi-statement SQL by splitting and executing each statement
 *)
 let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  let open Lwt.Infix in
 
   let statements = Sql_parser.split_sql sql in
 
@@ -210,6 +212,45 @@ let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration
                       let* () = log_verbose verbose (Printf.sprintf "Migration %Ld completed successfully" migration.Migration.version) in
                       Lwt.return (Success migration)
 
+(** Execute multiple migrations in order
+    Stops at the first failure and returns all results
+*)
+let run_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
+  let open Lwt.Syntax in
+
+  let rec run_all acc = function
+    | [] -> Lwt.return (List.rev acc)
+    | migration :: rest ->
+        let* result = run_migration ~verbose db migration in
+        (match result with
+         | Success _ ->
+             run_all (result :: acc) rest
+         | Failure _ ->
+             Lwt.return (List.rev (result :: acc)))
+  in
+
+  run_all [] migrations
+
+(** Run all pending migrations
+    1. Discovers all migration files
+    2. Gets applied versions from database
+    3. Identifies pending migrations
+    4. Executes pending migrations in order
+*)
+let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string)
+    : (execution_result list, Types.error) Lwt_result.t =
+  match Discovery.find_migrations ~dir:migrations_dir () with
+  | Error err -> Lwt.return_error err
+  | Ok all_migrations ->
+      get_applied_versions db >>= function
+      | Error caqti_err ->
+          Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" caqti_err)
+      | Ok applied_versions ->
+          let pending = Discovery.find_pending applied_versions all_migrations in
+
+          run_migrations ~verbose db pending >|= fun results ->
+          Ok results
+
 (** Rollback a single migration within a transaction
     On success: down SQL is executed and version is removed from schema_migrations
     On failure: transaction rolls back, nothing is changed
@@ -253,47 +294,6 @@ let rollback_migration ?(verbose = false) (db : Types.db_conn) (migration : Migr
                       let* () = log_verbose verbose (Printf.sprintf "Rollback of migration %Ld completed successfully" migration.Migration.version) in
                       Lwt.return (Success migration)
 
-(** Execute multiple migrations in order
-    Stops at the first failure and returns all results
-*)
-let run_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
-  let open Lwt.Syntax in
-
-  let rec run_all acc = function
-    | [] -> Lwt.return (List.rev acc)
-    | migration :: rest ->
-        let* result = run_migration ~verbose db migration in
-        (match result with
-         | Success _ ->
-             run_all (result :: acc) rest
-         | Failure _ ->
-             Lwt.return (List.rev (result :: acc)))
-  in
-
-  run_all [] migrations
-
-(** Run all pending migrations
-    1. Discovers all migration files
-    2. Gets applied versions from database
-    3. Identifies pending migrations
-    4. Executes pending migrations in order
-*)
-let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string)
-    : (execution_result list, Types.error) Lwt_result.t =
-  let open Lwt.Infix in
-
-  match Discovery.find_migrations ~dir:migrations_dir () with
-  | Error err -> Lwt.return_error err
-  | Ok all_migrations ->
-      get_applied_versions db >>= function
-      | Error caqti_err ->
-          Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" caqti_err)
-      | Ok applied_versions ->
-          let pending = Discovery.find_pending applied_versions all_migrations in
-
-          run_migrations ~verbose db pending >|= fun results ->
-          Ok results
-
 (** Rollback multiple migrations in reverse chronological order
     Stops at the first failure and returns all results
 *)
@@ -322,8 +322,6 @@ let rollback_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Mi
 *)
 let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (step : int)
     : (execution_result list, Types.error) Lwt_result.t =
-  let open Lwt.Infix in
-
   if step <= 0 then
     Lwt.return_error (Types.DatabaseError (Types.ParseError "Step must be a positive number"))
   else
@@ -356,8 +354,6 @@ let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrat
 *)
 let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (target_version : int64)
     : (execution_result list, Types.error) Lwt_result.t =
-  let open Lwt.Infix in
-
   (* Get applied versions from database *)
   get_applied_versions db >>= function
   | Error caqti_err ->
@@ -386,8 +382,6 @@ let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migratio
 
 let rollback_all ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
     : (execution_result list, Types.error) Lwt_result.t =
-  let open Lwt.Infix in
-
   (* Get applied versions from database *)
   get_applied_versions db >>= function
   | Error caqti_err ->

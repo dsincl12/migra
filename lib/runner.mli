@@ -4,15 +4,19 @@ type migration_record = {
   created_at : string;
 }
 
+type execution_result =
+  | Success of Migration.t
+  | Failure of Migration.t * Types.error
+
 (** Create the schema_migrations table if it doesn't exist (dialect-aware).
     Idempotent - safe to call multiple times. *)
 val ensure_migrations_table : Dialect.t -> Types.db_conn -> (unit, [> Caqti_error.t]) Lwt_result.t
 
+val is_applied : Types.db_conn -> int64 -> (bool, [> Caqti_error.t]) Lwt_result.t
+
 val get_applied_versions : Types.db_conn -> (int64 list, [> Caqti_error.t]) Lwt_result.t
 
 val get_applied_records : Dialect.t -> Types.db_conn -> (migration_record list, [> Caqti_error.t]) Lwt_result.t
-
-val is_applied : Types.db_conn -> int64 -> (bool, [> Caqti_error.t]) Lwt_result.t
 
 val get_latest_version : Types.db_conn -> (int64 option, [> Caqti_error.t]) Lwt_result.t
 
@@ -25,10 +29,6 @@ val add_migration : Types.db_conn -> int64 -> (unit, [> Caqti_error.t]) Lwt_resu
 
 val remove_migration : Types.db_conn -> int64 -> (unit, [> Caqti_error.t]) Lwt_result.t
 
-type execution_result =
-  | Success of Migration.t
-  | Failure of Migration.t * Types.error
-
 val is_success : execution_result -> bool
 
 val migration_of_result : execution_result -> Migration.t
@@ -40,19 +40,19 @@ val error_of_result : execution_result -> Types.error option
     On failure, transaction is rolled back automatically. *)
 val run_migration : ?verbose:bool -> Types.db_conn -> Migration.t -> execution_result Lwt.t
 
-(** Execute a migration's down SQL (rollback) within a transaction.
-    Returns Success on successful rollback, Failure on error.
-    On failure, transaction is rolled back automatically. *)
-val rollback_migration : ?verbose:bool -> Types.db_conn -> Migration.t -> execution_result Lwt.t
+(** Execute a list of migrations in order.
+    Returns execution results for each migration.
+    Stops on first failure. *)
+val run_migrations : ?verbose:bool -> Types.db_conn -> Migration.t list -> execution_result list Lwt.t
 
 (** Discover and run pending migrations.
     Returns execution results for each migration attempted. *)
 val run_pending : ?verbose:bool -> Types.db_conn -> string -> (execution_result list, Types.error) Lwt_result.t
 
-(** Execute a list of migrations in order.
-    Returns execution results for each migration.
-    Stops on first failure. *)
-val run_migrations : ?verbose:bool -> Types.db_conn -> Migration.t list -> execution_result list Lwt.t
+(** Execute a migration's down SQL (rollback) within a transaction.
+    Returns Success on successful rollback, Failure on error.
+    On failure, transaction is rolled back automatically. *)
+val rollback_migration : ?verbose:bool -> Types.db_conn -> Migration.t -> execution_result Lwt.t
 
 (** Rollback N most recent migrations.
     Returns execution results for each migration rolled back. *)
