@@ -326,7 +326,7 @@ let rollback_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Mi
 let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (step : int)
     : (execution_result list, Types.error) Lwt_result.t =
   if step <= 0 then
-    Lwt.return_error (Types.DatabaseError (Types.ParseError "Step must be a positive number"))
+    Lwt.return_error (Types.DatabaseError (Types.ValidationError "Step must be a positive number"))
   else
     get_applied_versions db >>= function
     | Error caqti_err ->

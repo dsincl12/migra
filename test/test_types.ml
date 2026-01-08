@@ -41,12 +41,12 @@ let test_show_database_error () =
   Alcotest.(check bool) "mentions not found"
     true (string_contains_substring msg1 "not found");
 
-  let err2 = Migra.Types.DatabaseError (Migra.Types.ParseError "invalid URL") in
+  let err2 = Migra.Types.DatabaseError (Migra.Types.UrlParseError "invalid URL") in
   let msg2 = Migra.Types.show_error err2 in
   Alcotest.(check bool) "contains parse message"
     true (string_contains_substring msg2 "invalid URL");
   Alcotest.(check bool) "mentions parse error"
-    true (string_contains_substring msg2 "Parse error")
+    true (string_contains_substring msg2 "parse error")
 
 let test_show_migration_error () =
   let err1 = Migra.Types.MigrationError (Migra.Types.MissingSection ("file.sql", "up")) in
@@ -95,7 +95,8 @@ let test_show_error_comprehensive () =
     Migra.Types.FileError (Migra.Types.InvalidFormat "bad");
     Migra.Types.FileError (Migra.Types.ReadError ("test.sql", Failure "err"));
     Migra.Types.DatabaseError (Migra.Types.DatabaseNotFound "db");
-    Migra.Types.DatabaseError (Migra.Types.ParseError "msg");
+    Migra.Types.DatabaseError (Migra.Types.UrlParseError "msg");
+    Migra.Types.DatabaseError (Migra.Types.ValidationError "msg");
     Migra.Types.MigrationError (Migra.Types.MissingSection ("f.sql", "up"));
     Migra.Types.MigrationError (Migra.Types.EmptySection ("f.sql", "down"));
     Migra.Types.MigrationError (Migra.Types.VersionConflict 123L);

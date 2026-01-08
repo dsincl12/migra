@@ -17,7 +17,8 @@ type db_error =
   | QueryFailed of string * Caqti_error.t
   | TransactionFailed of string * Caqti_error.t
   | DatabaseNotFound of string
-  | ParseError of string
+  | UrlParseError of string
+  | ValidationError of string
 
 (** Migration-specific errors *)
 type migration_error =

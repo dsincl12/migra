@@ -7,31 +7,31 @@ open Caqti_type.Std
 let get_hostname (uri : Uri.t) : (string, Types.error) result =
   match Uri.host uri with
   | Some host -> Ok host
-  | None -> Error (Types.DatabaseError (Types.ParseError "Could not parse host from DATABASE_URL"))
+  | None -> Error (Types.DatabaseError (Types.UrlParseError "Could not parse host from DATABASE_URL"))
 
 let get_port (uri : Uri.t) : (int, Types.error) result =
   match Uri.port uri with
   | Some port -> Ok port
-  | None -> Error (Types.DatabaseError (Types.ParseError "Could not parse port from DATABASE_URL"))
+  | None -> Error (Types.DatabaseError (Types.UrlParseError "Could not parse port from DATABASE_URL"))
 
 let get_database (uri : Uri.t) : (string, Types.error) result =
   let path = Uri.path uri in
   if String.length path = 0 then
-    Error (Types.DatabaseError (Types.ParseError "Could not parse database from DATABASE_URL (empty path)"))
+    Error (Types.DatabaseError (Types.UrlParseError "Could not parse database from DATABASE_URL (empty path)"))
   else
     match path.[0] with
     | '/' ->
         let db_name = String.sub path 1 (String.length path - 1) in
         if String.length db_name = 0 then
-          Error (Types.DatabaseError (Types.ParseError "Could not parse database from DATABASE_URL (empty database name)"))
+          Error (Types.DatabaseError (Types.UrlParseError "Could not parse database from DATABASE_URL (empty database name)"))
         else
           Ok db_name
-    | _ -> Error (Types.DatabaseError (Types.ParseError "Could not parse database from DATABASE_URL (invalid path format)"))
+    | _ -> Error (Types.DatabaseError (Types.UrlParseError "Could not parse database from DATABASE_URL (invalid path format)"))
 
 let get_database_url () : (string, Types.error) result =
   match Sys.getenv_opt "DATABASE_URL" with
   | Some url -> Ok url
-  | None -> Error (Types.DatabaseError (Types.ParseError "DATABASE_URL environment variable not set"))
+  | None -> Error (Types.DatabaseError (Types.UrlParseError "DATABASE_URL environment variable not set"))
 
 let string_contains (haystack : string) (needle : string) : bool =
   try
@@ -77,7 +77,7 @@ let connect_db (database_url : string) : ((Types.db_conn, Types.error) result) L
       let err_msg = Caqti_error.show err in
       if string_contains err_msg "suitable driver" || string_contains err_msg "not found" then
         let improved_msg = improve_driver_error database_url err in
-        Error (Types.DatabaseError (Types.ParseError improved_msg))
+        Error (Types.DatabaseError (Types.ValidationError improved_msg))
       else
         Error (Types.DatabaseError (Types.ConnectionFailed ("connect_db", err)))
 
@@ -96,7 +96,7 @@ let with_db (database_url : string) (f : Types.db_conn -> 'a Lwt.t) : ('a, Types
   | Ok db ->
       Lwt.catch
         (fun () -> f db >|= fun result -> Ok result)
-        (fun exn -> Lwt.return_error (Types.DatabaseError (Types.ParseError (Printexc.to_string exn))))
+        (fun exn -> Lwt.return_error (Types.DatabaseError (Types.ValidationError (Printf.sprintf "Unexpected error: %s" (Printexc.to_string exn)))))
 
 (** Build connection URL for admin database (dialect-aware)
     Used for creating/dropping databases
@@ -109,7 +109,7 @@ let get_admin_database_url (dialect : Dialect.t) (uri : Uri.t) : (string, Types.
   let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
 
   match D.admin_database with
-  | None -> Error (Types.DatabaseError (Types.ParseError "This database type does not support admin database connections"))
+  | None -> Error (Types.DatabaseError (Types.ValidationError "This database type does not support admin database connections"))
   | Some admin_db ->
       match get_hostname uri with
       | Error err -> Error err
@@ -154,7 +154,7 @@ let get_admin_database_url (dialect : Dialect.t) (uri : Uri.t) : (string, Types.
 let create_database (database_url : string) : (unit, Types.error) Lwt_result.t =
   (* Detect database dialect from URL *)
   match Dialect.detect_from_url database_url with
-  | Error msg -> Lwt.return_error (Types.DatabaseError (Types.ParseError msg))
+  | Error msg -> Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
   | Ok dialect ->
       let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
 
@@ -205,7 +205,7 @@ let create_database (database_url : string) : (unit, Types.error) Lwt_result.t =
 let drop_database (database_url : string) : (unit, Types.error) Lwt_result.t =
   (* Detect database dialect from URL *)
   match Dialect.detect_from_url database_url with
-  | Error msg -> Lwt.return_error (Types.DatabaseError (Types.ParseError msg))
+  | Error msg -> Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
   | Ok dialect ->
       let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
 
@@ -224,7 +224,7 @@ let drop_database (database_url : string) : (unit, Types.error) Lwt_result.t =
                 Lwt.return_ok ()
             )
             (fun exn ->
-              Lwt.return_error (Types.DatabaseError (Types.ParseError
+              Lwt.return_error (Types.DatabaseError (Types.ValidationError
                 (Printf.sprintf "Failed to delete SQLite file: %s" (Printexc.to_string exn))))
             )
       else

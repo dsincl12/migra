@@ -11,7 +11,8 @@ type db_error =
   | QueryFailed of string * Caqti_error.t
   | TransactionFailed of string * Caqti_error.t
   | DatabaseNotFound of string
-  | ParseError of string
+  | UrlParseError of string
+  | ValidationError of string
 
 type migration_error =
   | MissingSection of string * string  (* file, section *)
@@ -51,7 +52,8 @@ and show_db_error = function
         (Caqti_error.show err)
   | DatabaseNotFound name ->
       Printf.sprintf "Database not found: %s" name
-  | ParseError msg -> Printf.sprintf "Parse error: %s" msg
+  | UrlParseError msg -> Printf.sprintf "URL parse error: %s" msg
+  | ValidationError msg -> Printf.sprintf "Validation error: %s" msg
 
 and show_migration_error = function
   | MissingSection (file, section) ->
