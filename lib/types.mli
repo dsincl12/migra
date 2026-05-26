@@ -25,7 +25,7 @@ type migration_error =
   | MissingSection of string * string  (** file, section *)
   | EmptySection of string * string
   | ParseError of file_error
-  | VersionConflict of int64
+  | VersionConflict of int64 * string * string  (** version, file_a, file_b *)
 
 (** Top-level error type for all Migra operations *)
 type error =

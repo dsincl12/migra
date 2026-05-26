@@ -19,22 +19,32 @@ let generate_version () : int64 =
   in
   Int64.of_string timestamp_str
 
+(** A version stamp is exactly 14 ASCII decimal digits (YYYYMMDDHHMMSS).
+    We validate the digits explicitly: [Int64.of_string] would otherwise accept
+    a leading [-]/[+], [0x]/[0o]/[0b] prefixes, and [_] separators, letting
+    bogus or negative versions slip in. *)
+let is_version_stamp (s : string) : bool =
+  String.length s = 14 && String.for_all (fun c -> c >= '0' && c <= '9') s
+
+let has_sql_suffix (rest : string) : bool =
+  String.ends_with ~suffix:".sql" (String.lowercase_ascii rest)
+
+let invalid_filename filename =
+  Types.MigrationError (Types.ParseError (Types.InvalidFormat
+    (Printf.sprintf
+      "Invalid migration filename '%s' (expected exactly 14 digits then \
+       '_<description>.sql', e.g. 20240115120000_create_users.sql)" filename)))
+
 (** Parse version from filename
     Filename format: YYYYMMDDHHMMSS_description.sql
     Example: 20240115120000_create_users.sql -> 20240115120000
 *)
 let parse_version (filename : string) : (int64, Types.error) result =
   let basename = Filename.basename filename in
-
   match String.index_opt basename '_' with
-  | Some idx when idx = 14 ->
-      let version_str = String.sub basename 0 14 in
-      (match Int64.of_string_opt version_str with
-       | Some v -> Ok v
-       | None -> Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
-           (Printf.sprintf "Invalid version number '%s' in filename '%s' (must be 14 digits)" version_str filename)))))
-  | _ -> Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
-      (Printf.sprintf "Invalid migration filename format: '%s' (expected YYYYMMDDHHMMSS_description.sql)" filename))))
+  | Some 14 when is_version_stamp (String.sub basename 0 14) ->
+      Ok (Int64.of_string (String.sub basename 0 14))  (* safe: exactly 14 digits *)
+  | _ -> Error (invalid_filename filename)
 
 (** Parse description from filename
     Filename format: YYYYMMDDHHMMSS_description.sql
@@ -42,11 +52,10 @@ let parse_version (filename : string) : (int64, Types.error) result =
 *)
 let parse_description (filename : string) : (string, Types.error) result =
   let basename = Filename.basename filename in
-
   match String.index_opt basename '_' with
-  | Some idx when idx = 14 ->
-      let rest = String.sub basename (idx + 1) (String.length basename - idx - 1) in
-      if String.ends_with ~suffix:".sql" rest then
+  | Some 14 when is_version_stamp (String.sub basename 0 14) ->
+      let rest = String.sub basename 15 (String.length basename - 15) in
+      if has_sql_suffix rest then
         let desc = String.sub rest 0 (String.length rest - 4) in
         if String.length desc = 0 then
           Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
@@ -55,9 +64,8 @@ let parse_description (filename : string) : (string, Types.error) result =
           Ok desc
       else
         Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
-          (Printf.sprintf "Migration file must have .sql extension: '%s'" filename))))
-  | _ -> Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
-      (Printf.sprintf "Invalid migration filename format: '%s' (expected YYYYMMDDHHMMSS_description.sql)" filename))))
+          (Printf.sprintf "Migration file must have a .sql extension: '%s'" filename))))
+  | _ -> Error (invalid_filename filename)
 
 let from_file (file_path : string) : (t, Types.error) result =
   match parse_version file_path with
@@ -82,14 +90,13 @@ let parse_section (content : string) (section : string) : string option =
   let lines = String.split_on_char '\n' content in
 
   let section_marker = "-- +migrate " ^ section in
+  (* Match the marker exactly (after trimming) so that requesting section "up"
+     does not also match "-- +migrate upgrade" or similar. *)
   let rec find_section_start = function
     | [] -> None
     | line :: rest ->
-        let line_trimmed = String.trim line in
-        if String.starts_with ~prefix:section_marker line_trimmed then
-          Some rest
-        else
-          find_section_start rest
+        if String.trim line = section_marker then Some rest
+        else find_section_start rest
   in
 
   match find_section_start lines with
@@ -110,29 +117,23 @@ let parse_section (content : string) (section : string) : string option =
 
       Some (String.trim joined)
 
-let read_up_sql (migration : t) : (string, Types.error) result =
+let read_section_sql (migration : t) (section : string) : (string, Types.error) result =
   match read_sql migration with
   | Error e -> Error e
   | Ok content ->
-      match parse_section content "up" with
-      | None -> Error (Types.MigrationError (Types.MissingSection (migration.file_path, "up")))
+      match parse_section content section with
+      | None -> Error (Types.MigrationError (Types.MissingSection (migration.file_path, section)))
       | Some sql ->
           if String.trim sql = "" then
-            Error (Types.MigrationError (Types.EmptySection (migration.file_path, "up")))
+            Error (Types.MigrationError (Types.EmptySection (migration.file_path, section)))
           else
             Ok sql
 
+let read_up_sql (migration : t) : (string, Types.error) result =
+  read_section_sql migration "up"
+
 let read_down_sql (migration : t) : (string, Types.error) result =
-  match read_sql migration with
-  | Error e -> Error e
-  | Ok content ->
-      match parse_section content "down" with
-      | None -> Error (Types.MigrationError (Types.MissingSection (migration.file_path, "down")))
-      | Some sql ->
-          if String.trim sql = "" then
-            Error (Types.MigrationError (Types.EmptySection (migration.file_path, "down")))
-          else
-            Ok sql
+  read_section_sql migration "down"
 
 let make_filename (version : int64) (description : string) : string =
   Printf.sprintf "%Ld_%s.sql" version description

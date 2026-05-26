@@ -65,12 +65,14 @@ let test_show_migration_error () =
   Alcotest.(check bool) "mentions empty"
     true (string_contains_substring msg2 "Empty");
 
-  let err3 = Migra.Types.MigrationError (Migra.Types.VersionConflict 20240115120000L) in
+  let err3 = Migra.Types.MigrationError
+    (Migra.Types.VersionConflict (20240115120000L,
+       "20240115120000_a.sql", "20240115120000_b.sql")) in
   let msg3 = Migra.Types.show_error err3 in
   Alcotest.(check bool) "contains version"
     true (string_contains_substring msg3 "20240115120000");
-  Alcotest.(check bool) "mentions conflict"
-    true (string_contains_substring msg3 "conflict")
+  Alcotest.(check bool) "mentions duplicated"
+    true (string_contains_substring msg3 "duplicated")
 
 let test_show_discovery_error () =
   let err = Migra.Types.DiscoveryError "directory not found" in
@@ -99,7 +101,7 @@ let test_show_error_comprehensive () =
     Migra.Types.DatabaseError (Migra.Types.ValidationError "msg");
     Migra.Types.MigrationError (Migra.Types.MissingSection ("f.sql", "up"));
     Migra.Types.MigrationError (Migra.Types.EmptySection ("f.sql", "down"));
-    Migra.Types.MigrationError (Migra.Types.VersionConflict 123L);
+    Migra.Types.MigrationError (Migra.Types.VersionConflict (123L, "a.sql", "b.sql"));
     Migra.Types.DiscoveryError "discovery failed";
   ] in
 

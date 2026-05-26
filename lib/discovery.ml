@@ -9,14 +9,22 @@ let applied_set_of_list (versions : int64 list) : Int64Set.t =
     Int64Set.add version set
   ) Int64Set.empty versions
 
+let has_sql_extension (filename : string) : bool =
+  String.ends_with ~suffix:".sql" (String.lowercase_ascii filename)
+
+(** A well-formed migration filename: exactly what {!Migration.from_file}
+    accepts. Defined in terms of the parser so the two can never disagree. *)
 let is_migration_file (filename : string) : bool =
-  String.ends_with ~suffix:".sql" filename &&
-  String.length filename > 18 && (* At least 14 digits + _ + 1 char + .sql *)
-  (try
-    let version_part = String.sub filename 0 14 in
-    let _ = Int64.of_string version_part in
-    filename.[14] = '_'
-   with _ -> false)
+  Result.is_ok (Migration.from_file filename)
+
+(** A [.sql] file whose name starts with a digit clearly intends to be a
+    timestamped migration; if it then fails to parse it is an error, not
+    something to silently skip. Files that don't look like migration attempts
+    (README.md, helpers.sql, ...) are ignored. *)
+let looks_like_migration (filename : string) : bool =
+  has_sql_extension filename
+  && String.length filename > 0
+  && (let c = filename.[0] in c >= '0' && c <= '9')
 
 let read_directory (dir_path : string) : (string list, Types.error) result =
   try
@@ -30,29 +38,44 @@ let read_directory (dir_path : string) : (string list, Types.error) result =
   with e ->
     Error (Types.DiscoveryError (Printf.sprintf "Error reading directory %s: %s" dir_path (Printexc.to_string e)))
 
+(** Find the first pair of migrations sharing a version.
+    Assumes the list is sorted by version, so duplicates are adjacent. *)
+let rec first_duplicate_version = function
+  | (a : Migration.t) :: ((b :: _) as rest) ->
+      if Int64.equal a.Migration.version b.Migration.version then Some (a, b)
+      else first_duplicate_version rest
+  | _ -> None
+
 let find_migrations ?(dir = default_migrations_dir) () : (Migration.t list, Types.error) result =
   match read_directory dir with
   | Error e -> Error e
   | Ok files ->
-      let migration_files =
-        files
-        |> List.filter is_migration_file
-        |> List.map (fun f -> Filename.concat dir f)
-      in
-
+      (* Parse every .sql file. A malformed file that clearly meant to be a
+         migration is a hard error (we don't hide it); other files are ignored. *)
       let rec parse_all acc = function
         | [] -> Ok (List.rev acc)
-        | file :: rest ->
-            match Migration.from_file file with
-            | Ok migration -> parse_all (migration :: acc) rest
-            | Error err -> Error err
+        | filename :: rest ->
+            if not (has_sql_extension filename) then parse_all acc rest
+            else
+              match Migration.from_file (Filename.concat dir filename) with
+              | Ok migration -> parse_all (migration :: acc) rest
+              | Error err ->
+                  if looks_like_migration filename then Error err
+                  else parse_all acc rest
       in
 
-      match parse_all [] migration_files with
+      match parse_all [] files with
       | Error e -> Error e
       | Ok migrations ->
           let sorted = List.sort Migration.compare migrations in
-          Ok sorted
+          (* Two files with the same version would corrupt apply/pending
+             tracking (applying one marks the version, silently hiding the
+             other), so reject the ambiguity up front. *)
+          match first_duplicate_version sorted with
+          | Some (a, b) ->
+              Error (Types.MigrationError
+                (Types.VersionConflict (a.Migration.version, a.file_path, b.file_path)))
+          | None -> Ok sorted
 
 (** Find pending migrations (not yet applied)
     Takes a list of applied versions and all discovered migrations,

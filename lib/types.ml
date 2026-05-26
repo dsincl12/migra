@@ -18,7 +18,7 @@ type migration_error =
   | MissingSection of string * string  (* file, section *)
   | EmptySection of string * string
   | ParseError of file_error
-  | VersionConflict of int64
+  | VersionConflict of int64 * string * string  (* version, file_a, file_b *)
 
 type error =
   | FileError of file_error
@@ -61,5 +61,6 @@ and show_migration_error = function
   | EmptySection (file, section) ->
       Printf.sprintf "Empty %s section in file: %s" section file
   | ParseError err -> show_file_error err
-  | VersionConflict version ->
-      Printf.sprintf "Version conflict: %Ld" version
+  | VersionConflict (version, file_a, file_b) ->
+      Printf.sprintf "Migration version %Ld is duplicated by two files: %s and %s"
+        version file_a file_b
