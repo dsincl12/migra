@@ -1,16 +1,19 @@
 
-(** Split SQL text into individual statements.
+(** Split SQL text into individual statements on top-level semicolons.
 
-    Handles string literals (single and double quotes) and escaped quotes properly.
-    Filters out comment-only statements.
-    Returns list of non-empty SQL statements.
+    Semicolons inside string literals ['...'], quoted identifiers ["..."] /
+    [`...`], PostgreSQL dollar-quoted bodies [$$...$$] / [$tag$...$tag$], line
+    comments [-- ...], and (nested) block comments [/* ... */] are not treated
+    as terminators. Comment-only and whitespace-only statements are dropped;
+    results are trimmed.
+
+    Pass [~backslash_escapes:true] for MySQL/MariaDB, where [\] escapes the next
+    character inside a single-quoted string. The default [false] is correct for
+    PostgreSQL and SQLite.
 
     {b Example}:
     {[
       split_sql "SELECT * FROM users; INSERT INTO logs VALUES ('test');"
       (* Returns: ["SELECT * FROM users"; "INSERT INTO logs VALUES ('test')"] *)
-    ]}
-
-    {b Note}: Does not handle inline comments or block comments.
-*)
-val split_sql : string -> string list
+    ]} *)
+val split_sql : ?backslash_escapes:bool -> string -> string list

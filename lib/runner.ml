@@ -150,98 +150,143 @@ let remove_migration (db : Types.db_conn) (version : int64) : (unit, [> Caqti_er
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   Db.exec delete_migration_query version
 
-(** Execute raw SQL within a connection
-    Handles multi-statement SQL by splitting and executing each statement
-*)
+(** Execute raw SQL within a connection.
+    Handles multi-statement SQL by splitting and executing each statement.
+
+    Each statement is sent as a {b literal} query ([Caqti_query.L]) rather than
+    through Caqti's query-template parser, so characters Caqti would otherwise
+    interpret as parameter placeholders - ['?'], ['$1'], and PostgreSQL
+    dollar-quoting ['$$'] - are passed through untouched. This is what lets
+    migrations contain stored-procedure/trigger bodies and literal ['?']/['$'].
+
+    Splitting is dialect-aware: MySQL/MariaDB use backslash string escapes,
+    PostgreSQL and SQLite do not (detected from the connection's driver). *)
 let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
 
-  let statements = Sql_parser.split_sql sql in
+  let backslash_escapes =
+    match Caqti_driver_info.dialect_tag Db.driver_info with
+    | `Mysql -> true
+    | _ -> false
+  in
+  let statements = Sql_parser.split_sql ~backslash_escapes sql in
+
+  (* Send the statement as a literal query (no placeholder parsing). *)
+  let exec_one stmt =
+    let request =
+      Caqti_request.create
+        ~oneshot:true
+        Caqti_type.unit Caqti_type.unit Caqti_mult.zero
+        (fun _ -> Caqti_query.L stmt)
+    in
+    Db.exec request ()
+  in
 
   let rec exec_all = function
     | [] -> Lwt_result.return ()
     | stmt :: rest ->
         log_verbose verbose (Printf.sprintf "Executing SQL: %s" (String.sub stmt 0 (min 60 (String.length stmt)) ^ (if String.length stmt > 60 then "..." else ""))) >>= fun () ->
-        let query = (unit ->. unit) ~oneshot:true stmt in
-        Db.exec query () >>= fun result ->
+        exec_one stmt >>= fun result ->
         match result with
         | Error e -> Lwt.return_error e
         | Ok () -> exec_all rest
   in
   exec_all statements
 
-(** Execute a single migration within a transaction
-    On success: SQL is executed and version is recorded
-    On failure: transaction rolls back, nothing is recorded
-*)
-let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
-  (* Note: File read errors return immediately WITHOUT starting a transaction.
-     SQL execution errors occur WITHIN a transaction and trigger rollback. *)
-  match Migration.read_up_sql migration with
+(** Run one migration's SQL inside a transaction and update [schema_migrations].
+
+    [read_sql] selects the section to run (up for apply, down for rollback) and
+    [record] updates the table (insert for apply, delete for rollback); [action]
+    only labels log messages. The shape is the same for both directions:
+    BEGIN -> run SQL -> update table -> COMMIT, and any failure rolls the
+    transaction back so nothing is recorded.
+
+    File-read errors return [Failure] immediately, before any transaction. *)
+let run_in_transaction ?(verbose = false)
+    ~(read_sql : Migration.t -> (string, Types.error) result)
+    ~(record : Types.db_conn -> int64 -> (unit, [> Caqti_error.t]) Lwt_result.t)
+    ~(action : string)
+    (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
+  match read_sql migration with
   | Error err ->
       Lwt.return (Failure (migration, err))
   | Ok sql_content ->
       let module Db = (val db : Caqti_lwt.CONNECTION) in
       let open Lwt.Syntax in
+      let version = migration.Migration.version in
 
-      (* Helper to convert Caqti errors and rollback *)
+      (* No transaction is open yet (e.g. BEGIN itself failed): report directly,
+         do not issue a ROLLBACK against a non-existent transaction. *)
+      let fail_no_transaction context e =
+        Lwt.return (Failure (migration, Types.of_caqti_error ~context e))
+      in
+      (* A step inside the transaction failed: roll back. If the ROLLBACK also
+         fails the database state is unknown, so surface that rather than
+         silently swallowing it and claiming "nothing was applied". *)
       let fail_with_rollback context e =
         let* () = log_verbose verbose (Printf.sprintf "Rolling back transaction: %s" context) in
-        let* _ = Db.rollback () in
-        let err = Types.of_caqti_error ~context e in
-        Lwt.return (Failure (migration, err))
+        let* rollback_result = Db.rollback () in
+        match rollback_result with
+        | Ok () -> Lwt.return (Failure (migration, Types.of_caqti_error ~context e))
+        | Error rollback_err ->
+            Lwt.return (Failure (migration, Types.DatabaseError (Types.ValidationError
+              (Printf.sprintf
+                 "%s failed (%s); the subsequent ROLLBACK also failed (%s) - \
+                  the database may be in an inconsistent state"
+                 context (Caqti_error.show e) (Caqti_error.show rollback_err)))))
       in
 
-      let* () = log_verbose verbose (Printf.sprintf "Starting migration %Ld" migration.Migration.version) in
+      let* () = log_verbose verbose (Printf.sprintf "Starting %s of migration %Ld" action version) in
       let* start_result = Db.start () in
       match start_result with
-      | Error e -> fail_with_rollback "start transaction" e
+      | Error e -> fail_no_transaction "start transaction" e
       | Ok () ->
-          let* () = log_verbose verbose "Executing migration SQL" in
+          let* () = log_verbose verbose (Printf.sprintf "Executing %s SQL" action) in
           let* sql_result = execute_sql ~verbose db sql_content in
           match sql_result with
-          | Error e -> fail_with_rollback "execute migration SQL" e
+          | Error e -> fail_with_rollback (Printf.sprintf "execute %s SQL" action) e
           | Ok () ->
-              let* () = log_verbose verbose (Printf.sprintf "Recording migration version %Ld in schema_migrations" migration.Migration.version) in
-              let* add_result = add_migration db migration.Migration.version in
-              match add_result with
-              | Error e -> fail_with_rollback "record migration" e
+              let* () = log_verbose verbose (Printf.sprintf "Updating schema_migrations for %Ld" version) in
+              let* record_result = record db version in
+              match record_result with
+              | Error e -> fail_with_rollback "update schema_migrations" e
               | Ok () ->
                   let* () = log_verbose verbose "Committing transaction" in
                   let* commit_result = Db.commit () in
                   match commit_result with
                   | Error e -> fail_with_rollback "commit transaction" e
                   | Ok () ->
-                      let* () = log_verbose verbose (Printf.sprintf "Migration %Ld completed successfully" migration.Migration.version) in
+                      let* () = log_verbose verbose (Printf.sprintf "%s of migration %Ld completed successfully" action version) in
                       Lwt.return (Success migration)
 
-(** Execute multiple migrations in order
-    Stops at the first failure and returns all results
-*)
-let run_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
+let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
+  run_in_transaction ~verbose ~read_sql:Migration.read_up_sql
+    ~record:add_migration ~action:"migration" db migration
+
+(** Run [step] over each item in order, accumulating results and stopping
+    after the first result for which [is_ok] returns false (that failing
+    result is still included). This is the shared sequential-execution engine
+    behind both migrate and rollback, parameterized over the per-item action so
+    callers can layer on timing or progress output. *)
+let run_until_failure ~(step : 'a -> 'b Lwt.t) ~(is_ok : 'b -> bool) (items : 'a list) : 'b list Lwt.t =
   let open Lwt.Syntax in
-
-  let rec run_all acc = function
+  let rec loop acc = function
     | [] -> Lwt.return (List.rev acc)
-    | migration :: rest ->
-        let* result = run_migration ~verbose db migration in
-        (match result with
-         | Success _ ->
-             run_all (result :: acc) rest
-         | Failure _ ->
-             Lwt.return (List.rev (result :: acc)))
+    | x :: rest ->
+        let* result = step x in
+        if is_ok result then loop (result :: acc) rest
+        else Lwt.return (List.rev (result :: acc))
   in
+  loop [] items
 
-  run_all [] migrations
+let run_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
+  run_until_failure ~step:(run_migration ~verbose db) ~is_ok:is_success migrations
 
-(** Run all pending migrations
-    1. Discovers all migration files
-    2. Gets applied versions from database
-    3. Identifies pending migrations
-    4. Executes pending migrations in order
-*)
-let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string)
-    : (execution_result list, Types.error) Lwt_result.t =
+(** Compute the pending migrations: all migrations on disk minus those already
+    recorded as applied in the database. Shared by [run_pending] and the
+    higher-level migrate APIs. *)
+let pending_migrations ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+    : (Migration.t list, Types.error) Lwt_result.t =
   match Discovery.find_migrations ~dir:migrations_dir () with
   | Error err -> Lwt.return_error err
   | Ok all_migrations ->
@@ -249,115 +294,33 @@ let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string
       | Error caqti_err ->
           Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" caqti_err)
       | Ok applied_versions ->
-          let pending = Discovery.find_pending applied_versions all_migrations in
+          Lwt.return_ok (Discovery.find_pending applied_versions all_migrations)
 
-          run_migrations ~verbose db pending >|= fun results ->
-          Ok results
+let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string)
+    : (execution_result list, Types.error) Lwt_result.t =
+  pending_migrations ~migrations_dir db >>= function
+  | Error err -> Lwt.return_error err
+  | Ok pending -> run_migrations ~verbose db pending >|= fun results -> Ok results
 
-(** Rollback a single migration within a transaction
-    On success: down SQL is executed and version is removed from schema_migrations
-    On failure: transaction rolls back, nothing is changed
-*)
 let rollback_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
-  match Migration.read_down_sql migration with
-  | Error err ->
-      Lwt.return (Failure (migration, err))
-  | Ok sql_content ->
-      let module Db = (val db : Caqti_lwt.CONNECTION) in
-      let open Lwt.Syntax in
+  run_in_transaction ~verbose ~read_sql:Migration.read_down_sql
+    ~record:remove_migration ~action:"rollback" db migration
 
-      (* Helper to convert Caqti errors and rollback *)
-      let fail_with_rollback context e =
-        let* () = log_verbose verbose (Printf.sprintf "Rolling back transaction: %s" context) in
-        let* _ = Db.rollback () in
-        let err = Types.of_caqti_error ~context e in
-        Lwt.return (Failure (migration, err))
-      in
-
-      let* () = log_verbose verbose (Printf.sprintf "Starting rollback of migration %Ld" migration.Migration.version) in
-      let* start_result = Db.start () in
-      match start_result with
-      | Error e -> fail_with_rollback "start transaction" e
-      | Ok () ->
-          let* () = log_verbose verbose "Executing rollback SQL" in
-          let* sql_result = execute_sql ~verbose db sql_content in
-          match sql_result with
-          | Error e -> fail_with_rollback "execute rollback SQL" e
-          | Ok () ->
-              let* () = log_verbose verbose (Printf.sprintf "Removing migration version %Ld from schema_migrations" migration.Migration.version) in
-              let* remove_result = remove_migration db migration.Migration.version in
-              match remove_result with
-              | Error e -> fail_with_rollback "remove migration record" e
-              | Ok () ->
-                  let* () = log_verbose verbose "Committing transaction" in
-                  let* commit_result = Db.commit () in
-                  match commit_result with
-                  | Error e -> fail_with_rollback "commit transaction" e
-                  | Ok () ->
-                      let* () = log_verbose verbose (Printf.sprintf "Rollback of migration %Ld completed successfully" migration.Migration.version) in
-                      Lwt.return (Success migration)
-
-(** Rollback multiple migrations in reverse chronological order
-    Stops at the first failure and returns all results
-*)
+(** Rollback multiple migrations in reverse chronological order.
+    Stops at the first failure and returns all results. *)
 let rollback_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
-  let open Lwt.Syntax in
-
   let sorted = List.sort (fun a b -> Int64.compare b.Migration.version a.Migration.version) migrations in
+  run_until_failure ~step:(rollback_migration ~verbose db) ~is_ok:is_success sorted
 
-  let rec rollback_all acc = function
-    | [] -> Lwt.return (List.rev acc)
-    | migration :: rest ->
-        let* result = rollback_migration ~verbose db migration in
-        (match result with
-         | Success _ ->
-             rollback_all (result :: acc) rest
-         | Failure _ ->
-             Lwt.return (List.rev (result :: acc)))
-  in
+type rollback_strategy =
+  | Step of int
+  | To of int64
+  | All
 
-  rollback_all [] sorted
-
-(** Rollback the last N migrations
-    1. Gets applied versions from database
-    2. Finds the N most recent migrations
-    3. Rolls them back in reverse chronological order
-*)
-let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (step : int)
-    : (execution_result list, Types.error) Lwt_result.t =
-  if step <= 0 then
-    Lwt.return_error (Types.DatabaseError (Types.ValidationError "Step must be a positive number"))
-  else
-    get_applied_versions db >>= function
-    | Error caqti_err ->
-        Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
-    | Ok [] -> Lwt.return_ok []
-    | Ok applied_versions ->
-        match Discovery.find_migrations ~dir:migrations_dir () with
-        | Error err -> Lwt.return_error err
-        | Ok all_migrations ->
-            let applied_set = List.fold_left
-              (fun set v -> Discovery.Int64Set.add v set)
-              Discovery.Int64Set.empty
-              applied_versions
-              in
-              let applied_migrations = List.filter
-                (fun m -> Discovery.Int64Set.mem m.Migration.version applied_set)
-                all_migrations
-              in
-
-              let sorted = List.sort (fun a b -> Int64.compare b.Migration.version a.Migration.version) applied_migrations in
-              let to_rollback = List.filteri (fun i _ -> i < step) sorted in
-
-              rollback_migrations ~verbose db to_rollback >|= fun results ->
-              Ok results
-
-(** Rollback to a specific version (exclusive)
-    Rolls back all migrations newer than the specified version
-*)
-let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (target_version : int64)
-    : (execution_result list, Types.error) Lwt_result.t =
-  (* Get applied versions from database *)
+(** The migrations that are both recorded as applied and present on disk,
+    in chronological order. Shared by rollback selection and status reporting. *)
+let applied_migrations ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+    : (Migration.t list, Types.error) Lwt_result.t =
   get_applied_versions db >>= function
   | Error caqti_err ->
       Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
@@ -365,44 +328,50 @@ let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migratio
       match Discovery.find_migrations ~dir:migrations_dir () with
       | Error err -> Lwt.return_error err
       | Ok all_migrations ->
-          let applied_set = List.fold_left
-            (fun set v -> Discovery.Int64Set.add v set)
-            Discovery.Int64Set.empty
-            applied_versions
-          in
-          let to_rollback = List.filter
-            (fun m ->
-              Discovery.Int64Set.mem m.Migration.version applied_set &&
-              Int64.compare m.Migration.version target_version > 0)
-            all_migrations
-          in
+          let applied_set = Discovery.applied_set_of_list applied_versions in
+          Lwt.return_ok
+            (List.filter
+               (fun m -> Discovery.Int64Set.mem m.Migration.version applied_set)
+               all_migrations)
 
-          match to_rollback with
-          | [] -> Lwt.return_ok []
-          | _ ->
-              rollback_migrations ~verbose db to_rollback >|= fun results ->
-              Ok results
+let rollback_targets ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+    (strategy : rollback_strategy) : (Migration.t list, Types.error) Lwt_result.t =
+  match strategy with
+  | Step n when n <= 0 ->
+      Lwt.return_error (Types.DatabaseError (Types.ValidationError "Step must be a positive number"))
+  | _ ->
+      applied_migrations ~migrations_dir db >>= function
+      | Error err -> Lwt.return_error err
+      | Ok applied ->
+          let targets = match strategy with
+            | All -> applied
+            | To target ->
+                List.filter
+                  (fun m -> Int64.compare m.Migration.version target > 0)
+                  applied
+            | Step n ->
+                List.sort
+                  (fun a b -> Int64.compare b.Migration.version a.Migration.version)
+                  applied
+                |> List.filteri (fun i _ -> i < n)
+          in
+          Lwt.return_ok targets
+
+let run_rollback ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir)
+    (db : Types.db_conn) (strategy : rollback_strategy)
+    : (execution_result list, Types.error) Lwt_result.t =
+  rollback_targets ~migrations_dir db strategy >>= function
+  | Error err -> Lwt.return_error err
+  | Ok targets -> rollback_migrations ~verbose db targets >|= fun results -> Ok results
+
+let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (step : int)
+    : (execution_result list, Types.error) Lwt_result.t =
+  run_rollback ~verbose ~migrations_dir db (Step step)
+
+let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (target_version : int64)
+    : (execution_result list, Types.error) Lwt_result.t =
+  run_rollback ~verbose ~migrations_dir db (To target_version)
 
 let rollback_all ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
     : (execution_result list, Types.error) Lwt_result.t =
-  (* Get applied versions from database *)
-  get_applied_versions db >>= function
-  | Error caqti_err ->
-      Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
-  | Ok [] -> Lwt.return_ok []
-  | Ok applied_versions ->
-      match Discovery.find_migrations ~dir:migrations_dir () with
-      | Error err -> Lwt.return_error err
-      | Ok all_migrations ->
-          let applied_set = List.fold_left
-            (fun set v -> Discovery.Int64Set.add v set)
-            Discovery.Int64Set.empty
-            applied_versions
-          in
-          let applied_migrations = List.filter
-            (fun m -> Discovery.Int64Set.mem m.Migration.version applied_set)
-            all_migrations
-          in
-
-          rollback_migrations ~verbose db applied_migrations >|= fun results ->
-          Ok results
+  run_rollback ~verbose ~migrations_dir db All

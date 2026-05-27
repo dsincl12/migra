@@ -8,6 +8,11 @@ type execution_result =
   | Success of Migration.t
   | Failure of Migration.t * Types.error
 
+type rollback_strategy =
+  | Step of int
+  | To of int64
+  | All
+
 (** Create the schema_migrations table if it doesn't exist (dialect-aware).
     Idempotent - safe to call multiple times. *)
 val ensure_migrations_table : Dialect.t -> Types.db_conn -> (unit, [> Caqti_error.t]) Lwt_result.t
@@ -34,6 +39,19 @@ val is_success : execution_result -> bool
 val migration_of_result : execution_result -> Migration.t
 
 val error_of_result : execution_result -> Types.error option
+
+(** Run [step] over each item in order, stopping after the first result for
+    which [is_ok] is false (that failing result is still included). Shared
+    sequential engine; callers supply a [step] that may add timing or output. *)
+val run_until_failure : step:('a -> 'b Lwt.t) -> is_ok:('b -> bool) -> 'a list -> 'b list Lwt.t
+
+val pending_migrations : ?migrations_dir:string -> Types.db_conn -> (Migration.t list, Types.error) Lwt_result.t
+
+(** Migrations that are both recorded as applied and present on disk, in
+    chronological order. *)
+val applied_migrations : ?migrations_dir:string -> Types.db_conn -> (Migration.t list, Types.error) Lwt_result.t
+
+val rollback_targets : ?migrations_dir:string -> Types.db_conn -> rollback_strategy -> (Migration.t list, Types.error) Lwt_result.t
 
 (** Execute a migration's up SQL within a transaction.
     Returns Success on successful execution, Failure on error.
