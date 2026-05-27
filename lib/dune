@@ -10,7 +10,6 @@
    caqti-dynload
    uri
    unix
-   str
    logs
    logs.lwt
    logs.fmt

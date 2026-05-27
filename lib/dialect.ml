@@ -87,8 +87,10 @@ end
     We accept both formats for user convenience but normalize to what Caqti expects.
 *)
 let normalize_url (url : string) : string =
-  if String.starts_with ~prefix:"sqlite3://" url then
-    "sqlite3:" ^ String.sub url 10 (String.length url - 10)
+  let prefix = "sqlite3://" in
+  if String.starts_with ~prefix url then
+    let n = String.length prefix in
+    "sqlite3:" ^ String.sub url n (String.length url - n)
   else
     url
 
@@ -102,7 +104,9 @@ let detect_from_url (url : string) : (t, string) result =
   else
     let scheme =
       match String.index_opt url ':' with
-      | Some idx -> String.sub url 0 (idx + 3)
+      (* Grab "scheme://" for the message, but clamp the length: a URL like
+         "ht:" has no room for the "//" and would otherwise overflow String.sub. *)
+      | Some idx -> String.sub url 0 (min (idx + 3) (String.length url))
       | None -> url
     in
     Error (Printf.sprintf
