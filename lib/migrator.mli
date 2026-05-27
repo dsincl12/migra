@@ -39,6 +39,11 @@ type config = {
   verbose : bool;             (** Enable SQL statement logging *)
 }
 
+(** Build a {!config}. [migrations_dir] defaults to ["migrations"] and
+    [verbose] to [false]. Preferred over the record literal:
+    {[ Migrator.make ~database_url () ]} *)
+val make : ?migrations_dir:string -> ?verbose:bool -> database_url:string -> unit -> config
+
 (** {1 Results} *)
 
 (** Result of executing a single migration *)
@@ -56,6 +61,11 @@ type operation_result = {
   success_count : int;                  (** Number of successful migrations *)
   failure_count : int;                  (** Number of failed migrations *)
 }
+
+(** [true] when no migration in the operation failed ([failure_count = 0]).
+    Since {!run}/{!rollback} return [Ok] even when an individual migration's SQL
+    fails, check this to decide overall success. *)
+val succeeded : operation_result -> bool
 
 (** Status of a single migration *)
 type migration_status = {
@@ -81,13 +91,18 @@ type status_result = {
     haven't been applied yet, and executes them in chronological order.
     Stops at the first failure.
 
+    [Error] is returned only when migrations could not be run at all (bad URL,
+    connection failure, or schema-table setup). If migrations ran but one's SQL
+    failed, the result is still [Ok] with [failure_count > 0] - use {!succeeded}
+    to check overall success.
+
     @param config Migration configuration
     @return Operation result with per-migration outcomes
 *)
 val run : config -> (operation_result, Types.error) Lwt_result.t
 
-(** Rollback strategy *)
-type rollback_strategy =
+(** Rollback strategy (an alias of {!Runner.rollback_strategy}) *)
+type rollback_strategy = Runner.rollback_strategy =
   | Step of int         (** Rollback last N migrations *)
   | To of int64         (** Rollback to specific version (exclusive) *)
   | All                 (** Rollback all migrations *)
@@ -95,7 +110,9 @@ type rollback_strategy =
 (** Rollback migrations according to strategy.
 
     Executes down SQL for selected migrations in reverse chronological order.
-    Stops at the first failure.
+    Stops at the first failure. [Ok]/[Error] follow the same rule as {!run}:
+    [Error] means the rollback could not be started; a failed down-migration
+    surfaces as [Ok] with [failure_count > 0] (see {!succeeded}).
 
     @param config Migration configuration
     @param strategy Rollback strategy
