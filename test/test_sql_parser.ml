@@ -123,6 +123,51 @@ let test_split_sql_trims_whitespace () =
   Alcotest.(check string) "second trimmed"
     "INSERT INTO posts VALUES (1)" (List.nth statements 1)
 
+let test_split_sql_dollar_quote () =
+  let sql = "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE plpgsql;" in
+  let statements = Migra.Sql_parser.split_sql sql in
+  Alcotest.(check int) "1 statement (dollar-quoted body not split)" 1 (List.length statements)
+
+let test_split_sql_dollar_quote_tagged () =
+  let sql = "CREATE FUNCTION a() RETURNS void AS $body$ BEGIN; END; $body$ LANGUAGE plpgsql; \
+             CREATE FUNCTION b() RETURNS void AS $body$ BEGIN; END; $body$ LANGUAGE plpgsql;" in
+  let statements = Migra.Sql_parser.split_sql sql in
+  Alcotest.(check int) "2 statements" 2 (List.length statements)
+
+let test_split_sql_block_comment () =
+  let sql = "/* drop; everything; */ SELECT 1;" in
+  let statements = Migra.Sql_parser.split_sql sql in
+  Alcotest.(check int) "1 statement (semicolons in block comment)" 1 (List.length statements)
+
+let test_split_sql_line_comment_semicolon () =
+  let sql = "SELECT 1 -- note; not a terminator\nFROM t;" in
+  let statements = Migra.Sql_parser.split_sql sql in
+  Alcotest.(check int) "1 statement (semicolon in line comment)" 1 (List.length statements)
+
+let test_split_sql_backtick () =
+  let sql = "SELECT * FROM `weird;name`;" in
+  let statements = Migra.Sql_parser.split_sql sql in
+  Alcotest.(check int) "1 statement (semicolon in backtick id)" 1 (List.length statements)
+
+let test_split_sql_mysql_backslash () =
+  let sql = {|INSERT INTO t VALUES ('a\'; still in string')|} in
+  Alcotest.(check int) "1 statement (backslash escape on)" 1
+    (List.length (Migra.Sql_parser.split_sql ~backslash_escapes:true sql))
+
+let test_split_sql_delimiter () =
+  let sql =
+    "DELIMITER //\n\
+     CREATE PROCEDURE p() BEGIN INSERT INTO t VALUES (1); INSERT INTO t VALUES (2); END //\n\
+     DELIMITER ;\n\
+     INSERT INTO t VALUES (3);" in
+  let statements = Migra.Sql_parser.split_sql sql in
+  Alcotest.(check int) "2 statements (procedure + insert)" 2 (List.length statements);
+  Alcotest.(check bool) "procedure kept whole"
+    true (String.length (List.nth statements 0) > 0
+          && not (String.contains (List.nth statements 0) '/'));
+  Alcotest.(check string) "trailing insert"
+    "INSERT INTO t VALUES (3)" (List.nth statements 1)
+
 let async_of_sync f () = f (); Lwt.return_unit
 
 let suite = [
@@ -143,4 +188,11 @@ let suite = [
   "split_sql_newlines_in_strings", `Quick, async_of_sync test_split_sql_newlines_in_strings;
   "split_sql_consecutive_semicolons", `Quick, async_of_sync test_split_sql_consecutive_semicolons;
   "split_sql_trims_whitespace", `Quick, async_of_sync test_split_sql_trims_whitespace;
+  "split_sql_dollar_quote", `Quick, async_of_sync test_split_sql_dollar_quote;
+  "split_sql_dollar_quote_tagged", `Quick, async_of_sync test_split_sql_dollar_quote_tagged;
+  "split_sql_block_comment", `Quick, async_of_sync test_split_sql_block_comment;
+  "split_sql_line_comment_semicolon", `Quick, async_of_sync test_split_sql_line_comment_semicolon;
+  "split_sql_backtick", `Quick, async_of_sync test_split_sql_backtick;
+  "split_sql_mysql_backslash", `Quick, async_of_sync test_split_sql_mysql_backslash;
+  "split_sql_delimiter", `Quick, async_of_sync test_split_sql_delimiter;
 ]

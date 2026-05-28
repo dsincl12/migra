@@ -107,8 +107,11 @@ let test_get_admin_database_url_with_password () =
   let result = Migra.Database.get_admin_database_url Migra.Dialect.PostgreSQL uri in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
-  Alcotest.(check string) "admin URL has username only"
-    "postgresql://myuser@localhost:5432/postgres" admin_url;
+  (* The password must be preserved: admin commands (init/setup/drop/reset)
+     connect through this URL and will fail on password-protected servers
+     if it is stripped. *)
+  Alcotest.(check string) "admin URL keeps user and password"
+    "postgresql://myuser:mypass@localhost:5432/postgres" admin_url;
   Lwt.return_unit
 
 let test_get_admin_database_url_default_port () =
@@ -119,6 +122,30 @@ let test_get_admin_database_url_default_port () =
   Alcotest.(check string) "admin URL uses default port"
     "postgresql://myuser@localhost:5432/postgres" admin_url;
   Lwt.return_unit
+
+let contains_sub haystack needle =
+  let hl = String.length haystack and nl = String.length needle in
+  let rec go i = i + nl <= hl && (String.sub haystack i nl = needle || go (i + 1)) in
+  nl = 0 || go 0
+
+(** Test: a database name containing '/' is rejected (no connection needed -
+    the check short-circuits before connecting). *)
+let test_create_database_rejects_slash () =
+  Migra.Database.create_database "postgresql://localhost:5433/db/extra" >>= function
+  | Ok () -> Alcotest.fail "expected Error for a database name containing '/'"
+  | Error err ->
+      let msg = Migra.Types.show_error err in
+      Alcotest.(check bool) "mentions the bad name" true (contains_sub msg "db/extra");
+      Alcotest.(check bool) "explains the rule" true (contains_sub msg "cannot contain");
+      Lwt.return_unit
+
+let test_drop_database_rejects_slash () =
+  Migra.Database.drop_database "mariadb://root@127.0.0.1:3307/db/extra" >>= function
+  | Ok () -> Alcotest.fail "expected Error for a database name containing '/'"
+  | Error err ->
+      Alcotest.(check bool) "rejects slashed name" true
+        (contains_sub (Migra.Types.show_error err) "cannot contain");
+      Lwt.return_unit
 
 let get_test_admin_url () =
   match Sys.getenv_opt "DATABASE_URL" with
@@ -294,6 +321,9 @@ let suite = [
   "get_admin_database_url_no_user", `Quick, test_get_admin_database_url_no_user;
   "get_admin_database_url_with_password", `Quick, test_get_admin_database_url_with_password;
   "get_admin_database_url_default_port", `Quick, test_get_admin_database_url_default_port;
+
+  "create_database_rejects_slash", `Quick, test_create_database_rejects_slash;
+  "drop_database_rejects_slash", `Quick, test_drop_database_rejects_slash;
 
   "create_database", `Quick, test_create_database;
   "create_database_idempotent", `Quick, test_create_database_idempotent;

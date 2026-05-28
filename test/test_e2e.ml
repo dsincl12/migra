@@ -324,8 +324,53 @@ let test_database_lifecycle () =
               Migra.Database.drop_database db_url >>= fun _ ->
               Lwt.return_unit
 
+(** E2E: a migration whose up SQL contains a dollar-quoted function body (with
+    interior semicolons and a '$') runs correctly through the splitter and the
+    literal-query execution path, and the function is actually created. *)
+let test_postgres_function_migration () =
+  with_test_db_pooled "e2e_pgfn" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let v1 = 20240115120000L in
+      let _f1 = create_migration_with_sections migrations_dir v1 "add_fn"
+        "CREATE TABLE t (id int, note text);\n\
+         INSERT INTO t (id, note) VALUES (1, 'cost $5; 100%');\n\
+         CREATE FUNCTION add_one(x int) RETURNS int AS $$\n\
+         BEGIN\n  RETURN x + 1;  -- semicolons; in; the; body\nEND;\n\
+         $$ LANGUAGE plpgsql;"
+        "DROP FUNCTION add_one(int); DROP TABLE t;" in
+
+      with_initialized_db db_url (fun db ->
+        Migra.Runner.run_pending db migrations_dir >>= function
+        | Error msg ->
+            Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
+        | Ok results ->
+            Alcotest.(check int) "1 migration executed" 1 (List.length results);
+            Alcotest.(check bool) "migration succeeded" true
+              (List.for_all Migra.Runner.is_success results);
+
+            let module Db = (val db : Caqti_lwt.CONNECTION) in
+            let open Caqti_request.Infix in
+            let open Caqti_type.Std in
+            let call_fn = (unit ->! int) "SELECT add_one(41)" in
+            Db.find call_fn () >>= function
+            | Error err ->
+                Alcotest.fail (Printf.sprintf "calling add_one failed: %s" (Caqti_error.show err))
+            | Ok n ->
+                Alcotest.(check int) "dollar-quoted function works" 42 n;
+                let get_note = (unit ->! string) "SELECT note FROM t WHERE id = 1" in
+                Db.find get_note () >>= function
+                | Error err ->
+                    Alcotest.fail (Printf.sprintf "reading note failed: %s" (Caqti_error.show err))
+                | Ok note ->
+                    Alcotest.(check string) "literal $/; preserved" "cost $5; 100%" note;
+                    Lwt.return_unit
+      )
+    )
+  )
+
 let suite = [
   "fresh_setup_workflow", `Quick, test_fresh_setup_workflow;
+  "postgres_function_migration", `Quick, test_postgres_function_migration;
   "incremental_migrations", `Quick, test_incremental_migrations;
   "rollback_workflow", `Quick, test_rollback_workflow;
   "rollback_to_workflow", `Quick, test_rollback_to_workflow;

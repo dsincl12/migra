@@ -53,7 +53,16 @@ let test_parse_version_invalid () =
   Alcotest.(check bool) "reject non-numeric version" true (is_error result3);
 
   let result4 = Migra.Migration.parse_version "invalid_name" in
-  Alcotest.(check bool) "reject invalid format" true (is_error result4)
+  Alcotest.(check bool) "reject invalid format" true (is_error result4);
+
+  (* Strict: the version must be exactly 14 ASCII decimal digits. Int64.of_string
+     would otherwise accept all of these. *)
+  List.iter (fun f ->
+    Alcotest.(check bool) (Printf.sprintf "reject %s" f) true
+      (is_error (Migra.Migration.parse_version f)))
+    [ "-2024011512000_x.sql";   (* leading minus -> negative version *)
+      "0x012345678901_x.sql";   (* hex prefix *)
+      "1234567890_234_x.sql" ]  (* underscore not at index 14 *)
 
 let test_parse_description_valid () =
   let result = Migra.Migration.parse_description "20240115120000_create_users.sql" in
@@ -278,9 +287,18 @@ let test_read_sql_empty_section () =
     )
   )
 
+let test_parse_section_exact_marker () =
+  Alcotest.(check bool) "up does not match upgrade"
+    true (Migra.Migration.parse_section "-- +migrate upgrade\nSELECT 1;\n" "up" = None);
+  (match Migra.Migration.parse_section
+           "-- +migrate up\nSELECT 2;\n-- +migrate down\nSELECT 3;\n" "up" with
+   | Some s -> Alcotest.(check bool) "exact up section found" true (String.length s > 0)
+   | None -> Alcotest.fail "expected the up section to be found")
+
 let async_of_sync f () = f (); Lwt.return_unit
 
 let suite = [
+  "parse_section_exact_marker", `Quick, async_of_sync test_parse_section_exact_marker;
   "generate_version", `Quick, async_of_sync test_generate_version;
   "parse_version_valid", `Quick, async_of_sync test_parse_version_valid;
   "parse_version_invalid", `Quick, async_of_sync test_parse_version_invalid;

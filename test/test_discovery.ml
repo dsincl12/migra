@@ -123,6 +123,72 @@ let test_find_migrations () =
     )
   )
 
+let test_find_migrations_duplicate_version () =
+  Lwt_main.run (
+    with_temp_dir "discovery_dup" (fun dir ->
+      let _ = create_migration_with_sections dir 20240115120000L "alpha" "CREATE TABLE a;" "DROP TABLE a;" in
+      let _ = create_migration_with_sections dir 20240115120000L "beta" "CREATE TABLE b;" "DROP TABLE b;" in
+
+      let result = Migra.Discovery.find_migrations ~dir () in
+      Alcotest.(check bool) "find_migrations fails on duplicate" true (is_error result);
+
+      let error = match result with
+        | Ok _ -> Alcotest.fail "Expected Error but got Ok"
+        | Error err -> Migra.Types.show_error err
+      in
+      Alcotest.(check bool) "mentions the conflicting version"
+        true (string_contains_substring error "20240115120000");
+      Alcotest.(check bool) "mentions duplicated"
+        true (string_contains_substring error "duplicated");
+
+      Lwt.return_unit
+    )
+  )
+
+let test_find_migrations_rejects_malformed () =
+  Lwt_main.run (
+    with_temp_dir "discovery_malformed" (fun dir ->
+      let _ = create_migration_with_sections dir 20240115120000L "ok" "CREATE TABLE t;" "DROP TABLE t;" in
+      let oc = open_out (Filename.concat dir "1234567890_234_oops.sql") in
+      output_string oc "-- +migrate up\n-- +migrate down\n";
+      close_out oc;
+      let result = Migra.Discovery.find_migrations ~dir () in
+      Alcotest.(check bool) "malformed migration file is an error" true (is_error result);
+      Lwt.return_unit
+    )
+  )
+
+let test_find_migrations_ignores_non_migration_sql () =
+  Lwt_main.run (
+    with_temp_dir "discovery_helper" (fun dir ->
+      let _ = create_migration_with_sections dir 20240115120000L "ok" "CREATE TABLE t;" "DROP TABLE t;" in
+      let oc = open_out (Filename.concat dir "helpers.sql") in
+      output_string oc "SELECT 1;";
+      close_out oc;
+      let result = Migra.Discovery.find_migrations ~dir () in
+      Alcotest.(check bool) "succeeds, ignoring non-migration .sql" true (is_ok result);
+      (match result with
+       | Ok ms -> Alcotest.(check int) "only the real migration" 1 (List.length ms)
+       | Error _ -> ());
+      Lwt.return_unit
+    )
+  )
+
+let test_find_migrations_uppercase_ext () =
+  Lwt_main.run (
+    with_temp_dir "discovery_upper" (fun dir ->
+      let oc = open_out (Filename.concat dir "20240115120000_up.SQL") in
+      output_string oc "-- +migrate up\nCREATE TABLE t;\n-- +migrate down\nDROP TABLE t;\n";
+      close_out oc;
+      let result = Migra.Discovery.find_migrations ~dir () in
+      Alcotest.(check bool) "uppercase .SQL recognized" true (is_ok result);
+      (match result with
+       | Ok ms -> Alcotest.(check int) "one migration found" 1 (List.length ms)
+       | Error _ -> ());
+      Lwt.return_unit
+    )
+  )
+
 let test_find_migrations_empty () =
   Lwt_main.run (
     with_temp_dir "discovery_empty" (fun dir ->
@@ -290,6 +356,10 @@ let suite = [
   "read_directory_nonexistent", `Quick, async_of_sync test_read_directory_nonexistent;
   "read_directory_not_a_dir", `Quick, async_of_sync test_read_directory_not_a_dir;
   "find_migrations", `Quick, async_of_sync test_find_migrations;
+  "find_migrations_duplicate_version", `Quick, async_of_sync test_find_migrations_duplicate_version;
+  "find_migrations_rejects_malformed", `Quick, async_of_sync test_find_migrations_rejects_malformed;
+  "find_migrations_ignores_non_migration_sql", `Quick, async_of_sync test_find_migrations_ignores_non_migration_sql;
+  "find_migrations_uppercase_ext", `Quick, async_of_sync test_find_migrations_uppercase_ext;
   "find_migrations_empty", `Quick, async_of_sync test_find_migrations_empty;
   "find_migrations_filters", `Quick, async_of_sync test_find_migrations_filters;
   "find_pending_none_applied", `Quick, async_of_sync test_find_pending_none_applied;

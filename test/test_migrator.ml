@@ -321,9 +321,29 @@ let test_status_mixed () =
     )
   )
 
+let test_make_defaults () =
+  let c = Migra.Migrator.make ~database_url:"sqlite3:/tmp/x.db" () in
+  Alcotest.(check string) "default migrations_dir" "migrations" c.Migra.Migrator.migrations_dir;
+  Alcotest.(check bool) "default verbose" false c.Migra.Migrator.verbose;
+  let c2 = Migra.Migrator.make ~database_url:"sqlite3:/tmp/x.db" ~migrations_dir:"db/mig" ~verbose:true () in
+  Alcotest.(check string) "override dir" "db/mig" c2.Migra.Migrator.migrations_dir;
+  Lwt.return_unit
+
+let test_run_bad_url () =
+  let cfg = Migra.Migrator.make ~database_url:"oracle://localhost/db" () in
+  Lwt.catch
+    (fun () ->
+      Migra.Migrator.run cfg >>= function
+      | Error _ -> Lwt.return_unit
+      | Ok _ -> Alcotest.fail "expected Error for unsupported URL scheme")
+    (fun exn ->
+      Alcotest.fail (Printf.sprintf "run raised instead of returning Error: %s" (Printexc.to_string exn)))
+
 let async_of_sync f () = f (); Lwt.return_unit
 
 let suite = [
+  "make_defaults", `Quick, test_make_defaults;
+  "run_bad_url", `Quick, test_run_bad_url;
   "run_pending", `Quick, test_run_pending;
   "run_no_pending", `Quick, test_run_no_pending;
   "run_stops_on_failure", `Quick, test_run_stops_on_failure;

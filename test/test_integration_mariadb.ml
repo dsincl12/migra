@@ -386,8 +386,56 @@ let schema_tests = [
   "MariaDB schema table is idempotent", `Quick, test_mariadb_schema_idempotent;
 ]
 
+(** Test: a migration using DELIMITER to define a stored procedure (whose body
+    has interior semicolons) runs correctly through Runner, and the procedure
+    actually works. *)
+let test_mariadb_delimiter_procedure () =
+  with_mariadb_test_db "delim_proc" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let v1 = 20240115120000L in
+      let _f = create_migration_with_sections migrations_dir v1 "proc"
+        "CREATE TABLE t (id INT PRIMARY KEY);\n\
+         DELIMITER //\n\
+         CREATE PROCEDURE addrow(IN n INT) BEGIN \
+         INSERT INTO t (id) VALUES (n); INSERT INTO t (id) VALUES (n + 1); END //\n\
+         DELIMITER ;"
+        "DROP PROCEDURE addrow; DROP TABLE t;" in
+
+      with_db db_url (fun db ->
+        Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db >>= function
+        | Error err ->
+            Alcotest.fail (Printf.sprintf "ensure_migrations_table failed: %s" (Caqti_error.show err))
+        | Ok () ->
+            Migra.Runner.run_pending db migrations_dir >>= function
+            | Error msg ->
+                Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
+            | Ok results ->
+                Alcotest.(check int) "1 migration executed" 1 (List.length results);
+                Alcotest.(check bool) "migration succeeded" true
+                  (List.for_all Migra.Runner.is_success results);
+
+                let module Db = (val db : Caqti_lwt.CONNECTION) in
+                let open Caqti_request.Infix in
+                let open Caqti_type.Std in
+                let call = (unit ->. unit) "CALL addrow(10)" in
+                Db.exec call () >>= function
+                | Error err ->
+                    Alcotest.fail (Printf.sprintf "CALL addrow failed: %s" (Caqti_error.show err))
+                | Ok () ->
+                    let count = (unit ->! int) "SELECT COUNT(*) FROM t" in
+                    Db.find count () >>= function
+                    | Error err ->
+                        Alcotest.fail (Printf.sprintf "count failed: %s" (Caqti_error.show err))
+                    | Ok n ->
+                        Alcotest.(check int) "procedure inserted 2 rows" 2 n;
+                        Lwt.return_unit
+      )
+    )
+  )
+
 let migration_tests = [
   "MariaDB migration operations", `Quick, test_mariadb_migration_operations;
+  "MariaDB DELIMITER procedure", `Quick, test_mariadb_delimiter_procedure;
   "MariaDB get_applied_records", `Quick, test_mariadb_get_records;
   "MariaDB get_latest_version", `Quick, test_mariadb_latest_version;
   "MariaDB get_applied_versions sorted", `Quick, test_mariadb_get_applied_versions_sorted;

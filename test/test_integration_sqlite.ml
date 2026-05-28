@@ -231,8 +231,16 @@ let test_sqlite_memory_drop_database () =
   | Ok () ->
       Lwt.return_unit
 
+(** Test: a SQLite :memory: database lives only as long as its connection.
+
+    Within a single connection data persists, but each new connection to
+    [sqlite3::memory:] is a brand-new, independent database. (True process-wide
+    sharing would require [file::memory:?cache=shared].) This test documents
+    that gotcha so nobody assumes :memory: behaves like a file. *)
 let test_sqlite_memory_persistence () =
   with_sqlite_memory (fun db_url ->
+    (* First connection: create the table, add a row, confirm it is visible
+       on the same connection. *)
     with_db db_url (fun db ->
       Migra.Runner.ensure_migrations_table Migra.Dialect.SQLite db >>= function
       | Error err ->
@@ -243,16 +251,28 @@ let test_sqlite_memory_persistence () =
           | Error err ->
               Alcotest.fail (Printf.sprintf "add_migration failed: %s" (Caqti_error.show err))
           | Ok () ->
-              Lwt.return_unit
+              Migra.Runner.get_applied_versions db >>= function
+              | Error err ->
+                  Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
+              | Ok versions ->
+                  Alcotest.(check int) ":memory: persists within one connection" 1 (List.length versions);
+                  Lwt.return_unit
     ) >>= fun () ->
 
+    (* Second connection to the same :memory: URL is an independent database:
+       create the table fresh and confirm it starts empty - the first
+       connection's row did not carry over. *)
     with_db db_url (fun db ->
-      Migra.Runner.get_applied_versions db >>= function
+      Migra.Runner.ensure_migrations_table Migra.Dialect.SQLite db >>= function
       | Error err ->
-          Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
-      | Ok versions ->
-          Alcotest.(check int) ":memory: DB persists data within process" 1 (List.length versions);
-          Lwt.return_unit
+          Alcotest.fail (Printf.sprintf "ensure_migrations_table failed: %s" (Caqti_error.show err))
+      | Ok () ->
+          Migra.Runner.get_applied_versions db >>= function
+          | Error err ->
+              Alcotest.fail (Printf.sprintf "get_applied_versions failed: %s" (Caqti_error.show err))
+          | Ok versions ->
+              Alcotest.(check int) "fresh :memory: connection starts empty" 0 (List.length versions);
+              Lwt.return_unit
     )
   )
 
@@ -296,7 +316,7 @@ let memory_tests = [
   "SQLite :memory: basic operations", `Quick, test_sqlite_memory_basic;
   "SQLite :memory: create_database (no-op)", `Quick, test_sqlite_memory_create_database;
   "SQLite :memory: drop_database (no-op)", `Quick, test_sqlite_memory_drop_database;
-  "SQLite :memory: data persists within process", `Quick, test_sqlite_memory_persistence;
+  "SQLite :memory: is per-connection", `Quick, test_sqlite_memory_persistence;
 ]
 
 let suite = file_based_tests @ memory_tests

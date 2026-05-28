@@ -37,7 +37,15 @@ let test_detect_unsupported () =
   let result2 = Migra.Dialect.detect_from_url "mongodb://localhost/test" in
   (match result2 with
    | Error _ -> ()
-   | Ok _ -> Alcotest.fail "Should have returned error for mongodb://")
+   | Ok _ -> Alcotest.fail "Should have returned error for mongodb://");
+
+  (* Regression: a colon too near the end used to overflow String.sub and
+     raise Invalid_argument instead of returning a clean Error. *)
+  List.iter (fun url ->
+    match Migra.Dialect.detect_from_url url with
+    | Error _ -> ()
+    | Ok _ -> Alcotest.fail (Printf.sprintf "Should have returned error for %S" url)
+  ) ["ht:"; "x:"; ":"]
 
 let test_to_string () =
   Alcotest.(check string) "PostgreSQL name"
