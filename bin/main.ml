@@ -3,16 +3,21 @@
 open Cmdliner
 open Lwt.Infix
 
-(* Helper to run Lwt tasks *)
-let run_lwt f =
-  Lwt_main.run (
-    Lwt.catch
-      (fun () -> f ())
-      (fun exn ->
-        Lwt_io.eprintlf "Error: %s" (Printexc.to_string exn) >>= fun () ->
-        exit 1
-      )
-  )
+(* Run an Lwt command that yields an exit code, then exit with it.
+   Exiting here - after the event loop has fully settled - lets resource
+   finalizers (e.g. Database.with_db's disconnect) run before the process ends,
+   which a mid-callback [exit] would skip. *)
+let run_lwt (f : unit -> int Lwt.t) =
+  let code =
+    Lwt_main.run (
+      Lwt.catch
+        (fun () -> f ())
+        (fun exn ->
+          Lwt_io.eprintlf "Error: %s" (Printexc.to_string exn) >>= fun () ->
+          Lwt.return 1)
+    )
+  in
+  exit code
 
 (* Get database URL or exit with error *)
 let require_database_url () =
