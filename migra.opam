@@ -12,7 +12,7 @@ homepage: "https://github.com/dsincl12/migra"
 doc: "https://github.com/dsincl12/migra"
 bug-reports: "https://github.com/dsincl12/migra/issues"
 depends: [
-  "ocaml" {>= "5.4.0"}
+  "ocaml" {>= "4.14.0"}
   "dune" {>= "3.12" & >= "3.12"}
   "lwt" {>= "5.6.0"}
   "lwt_ppx" {with-test & >= "2.1.0"}

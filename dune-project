@@ -18,7 +18,7 @@
  (name migra)
  (synopsis "A database migration tool for OCaml supporting PostgreSQL, MariaDB, and SQLite")
  (depends
-   (ocaml (>= 5.4.0))
+   (ocaml (>= 4.14.0))
    (dune (>= 3.12))
    (lwt (>= 5.6.0))
    (lwt_ppx (and :with-test (>= 2.1.0)))

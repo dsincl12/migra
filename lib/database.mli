@@ -12,6 +12,10 @@ val get_database : Uri.t -> (string, Types.error) result
 (** Get DATABASE_URL from environment *)
 val get_database_url : unit -> (string, Types.error) result
 
+(** Replace the password in a connection URL with a fixed [*****] mask for safe
+    display (does not reveal the password length). *)
+val redact_url : string -> string
+
 (** Connect to database using connection string.
     Returns a single connection (use for one-off operations or transactions). *)
 val connect_db : string -> (Types.db_conn, Types.error) result Lwt.t

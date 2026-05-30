@@ -271,7 +271,7 @@ let status migrations_dir database_url =
             Lwt_io.eprintlf "Error: %s" (Types.show_error msg) >>= fun () ->
             Lwt.return 1
         | Ok migrations ->
-            Lwt_io.printlf "\nDatabase: %s\n" database_url >>= fun () ->
+            Lwt_io.printlf "\nDatabase: %s\n" (Database.redact_url database_url) >>= fun () ->
 
             (* Print table header *)
             Lwt_io.printl "  Status    Migration ID    Migration Name" >>= fun () ->

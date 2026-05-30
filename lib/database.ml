@@ -28,6 +28,30 @@ let get_database (uri : Uri.t) : (string, Types.error) result =
           Ok db_name
     | _ -> Error (Types.DatabaseError (Types.UrlParseError "Could not parse database from DATABASE_URL (invalid path format)"))
 
+(** Replace the password in a connection URL with a fixed [*****] mask for safe
+    display and logging. URLs without a password (or SQLite paths) are returned
+    unchanged. The mask is a fixed width so it does not reveal the real password
+    length.
+
+    [Uri.to_string] would percent-encode the [*] characters, so we round-trip
+    through an alphanumeric token and substitute the mask afterwards. *)
+let redact_url (url : string) : string =
+  let uri = Uri.of_string url in
+  match Uri.password uri with
+  | None -> url
+  | Some _ ->
+      let token = "MIGRAPWREDACTED0" in
+      let s = Uri.to_string (Uri.with_password uri (Some token)) in
+      let tl = String.length token in
+      let rec find i =
+        if i + tl > String.length s then None
+        else if String.sub s i tl = token then Some i
+        else find (i + 1)
+      in
+      (match find 0 with
+       | None -> s
+       | Some i -> String.sub s 0 i ^ "*****" ^ String.sub s (i + tl) (String.length s - i - tl))
+
 let get_database_url () : (string, Types.error) result =
   match Sys.getenv_opt "DATABASE_URL" with
   | Some url -> Ok url

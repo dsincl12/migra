@@ -128,6 +128,19 @@ let contains_sub haystack needle =
   let rec go i = i + nl <= hl && (String.sub haystack i nl = needle || go (i + 1)) in
   nl = 0 || go 0
 
+let test_redact_url () =
+  let r1 = Migra.Database.redact_url "postgresql://user:secret@localhost:5432/db" in
+  Alcotest.(check bool) "password masked" true (contains_sub r1 "*****");
+  Alcotest.(check bool) "secret gone" false (contains_sub r1 "secret");
+  Alcotest.(check bool) "user kept" true (contains_sub r1 "user");
+  Alcotest.(check bool) "length not leaked" false (contains_sub r1 "******");
+  Alcotest.(check string) "no-password url unchanged"
+    "postgresql://user@localhost:5432/db"
+    (Migra.Database.redact_url "postgresql://user@localhost:5432/db");
+  Alcotest.(check string) "sqlite unchanged"
+    "sqlite3:/tmp/x.db" (Migra.Database.redact_url "sqlite3:/tmp/x.db");
+  Lwt.return_unit
+
 (** Test: a database name containing '/' is rejected (no connection needed -
     the check short-circuits before connecting). *)
 let test_create_database_rejects_slash () =
@@ -322,6 +335,7 @@ let suite = [
   "get_admin_database_url_with_password", `Quick, test_get_admin_database_url_with_password;
   "get_admin_database_url_default_port", `Quick, test_get_admin_database_url_default_port;
 
+  "redact_url", `Quick, test_redact_url;
   "create_database_rejects_slash", `Quick, test_create_database_rejects_slash;
   "drop_database_rejects_slash", `Quick, test_drop_database_rejects_slash;
 
