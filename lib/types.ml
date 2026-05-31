@@ -19,6 +19,9 @@ type migration_error =
   | EmptySection of string * string
   | ParseError of file_error
   | VersionConflict of int64 * string * string  (* version, file_a, file_b *)
+  | ChecksumMismatch of int64 * string  (* version, file: applied file was modified *)
+  | AppliedFileMissing of int64         (* version recorded as applied but no file *)
+  | OutOfOrder of int64 * int64         (* pending version, latest applied version *)
 
 type error =
   | FileError of file_error
@@ -64,3 +67,18 @@ and show_migration_error = function
   | VersionConflict (version, file_a, file_b) ->
       Printf.sprintf "Migration version %Ld is duplicated by two files: %s and %s"
         version file_a file_b
+  | ChecksumMismatch (version, file) ->
+      Printf.sprintf
+        "Migration %Ld (%s) was modified after it was applied (checksum mismatch). \
+         Revert the file to its applied state, or roll the migration back and re-apply it."
+        version file
+  | AppliedFileMissing version ->
+      Printf.sprintf
+        "Migration %Ld is recorded as applied but its file is missing from the \
+         migrations directory."
+        version
+  | OutOfOrder (version, latest) ->
+      Printf.sprintf
+        "Migration %Ld is older than the most recently applied migration %Ld \
+         (out-of-order migration); applying it now would change history."
+        version latest

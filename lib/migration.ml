@@ -83,6 +83,14 @@ let read_sql (migration : t) : (string, Types.error) result =
   | Ok content -> Ok content
   | Error exn -> Error (Types.FileError (Types.ReadError (migration.file_path, exn)))
 
+(** MD5 checksum (hex) of the migration file's full contents, used to detect
+    whether a migration file was modified after it was applied. This is
+    change-detection, not a security check. *)
+let checksum (migration : t) : (string, Types.error) result =
+  match read_sql migration with
+  | Error e -> Error e
+  | Ok content -> Ok (Digest.to_hex (Digest.string content))
+
 (** Parse a section from migration file content
     Returns the content between a section marker and the next section or EOF
 *)

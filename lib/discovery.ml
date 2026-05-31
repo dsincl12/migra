@@ -50,8 +50,8 @@ let find_migrations ?(dir = default_migrations_dir) () : (Migration.t list, Type
   match read_directory dir with
   | Error e -> Error e
   | Ok files ->
-      (* Parse every .sql file. A malformed file that clearly meant to be a
-         migration is a hard error (we don't hide it); other files are ignored. *)
+      (* Parse every .sql file: a malformed file whose name looks like a
+         migration (see looks_like_migration) is an error; others are ignored. *)
       let rec parse_all acc = function
         | [] -> Ok (List.rev acc)
         | filename :: rest ->

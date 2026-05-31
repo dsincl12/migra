@@ -28,6 +28,10 @@ val read_up_sql : t -> (string, Types.error) result
     Parses the content between [-- +migrate down] and the next section marker. *)
 val read_down_sql : t -> (string, Types.error) result
 
+(** MD5 checksum (hex) of the migration file's full contents, for detecting
+    whether a migration was modified after being applied. *)
+val checksum : t -> (string, Types.error) result
+
 (** Generate migration filename from version and description.
     Format: [YYYYMMDDHHMMSS_description.sql] *)
 val make_filename : int64 -> string -> string

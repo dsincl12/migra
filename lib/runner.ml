@@ -34,121 +34,130 @@ let log_verbose verbose msg =
   else
     Lwt.return_unit
 
-(** {1 SQL Queries}
+(** {1 The schema_migrations table}
 
-    Prepared Caqti queries for schema_migrations table operations.
-*)
-
-let migration_exists_query =
-  (int64 ->? int64)
-  {sql|
-    SELECT version FROM schema_migrations WHERE version = ?
-  |sql}
-
-let get_all_versions_query =
-  (unit ->* int64)
-  {sql|
-    SELECT version FROM schema_migrations ORDER BY version ASC
-  |sql}
-
-let get_all_records_query (dialect : Dialect.t) =
-  let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
-  let timestamp_expr = D.timestamp_to_string "created_at" in
-  let sql = Printf.sprintf
-    "SELECT version, %s FROM schema_migrations ORDER BY version ASC"
-    timestamp_expr
-  in
-  (unit ->* t2 int64 string) sql
-
-let insert_migration_query =
-  (int64 ->. unit)
-  {sql|
-    INSERT INTO schema_migrations (version) VALUES (?)
-  |sql}
-
-let delete_migration_query =
-  (int64 ->. unit)
-  {sql|
-    DELETE FROM schema_migrations WHERE version = ?
-  |sql}
-
-let get_latest_version_query =
-  (unit ->? int64)
-  {sql|
-    SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1
-  |sql}
-
-(** {1 Schema Migrations Table Management}
-
-    Functions for managing the [schema_migrations] table,
-    which tracks which migrations have been applied to the database.
-
-    {2 Database Schema}
-
-    The [schema_migrations] table has the following structure:
+    The table tracking applied migrations. Its name defaults to
+    [schema_migrations] but is configurable; every operation below takes an
+    optional [?table]. The table has columns:
     {v
-      CREATE TABLE schema_migrations (
-        version BIGINT PRIMARY KEY,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )
+      version    BIGINT PRIMARY KEY   -- 14-digit YYYYMMDDHHMMSS
+      created_at TIMESTAMP            -- when applied (DB default)
+      checksum   TEXT                 -- MD5 of the migration file when applied
     v}
-
-    - [version]: 14-digit timestamp (YYYYMMDDHHMMSS) identifying the migration
-    - [created_at]: Timestamp when the migration was applied
-
-    {2 Transaction Safety}
-
-    These operations should always be called within transactions
-    to ensure atomicity between SQL execution and version recording.
+    The queries interpolate the (validated) table name, so they are built
+    per-call as [~oneshot] requests rather than cached module-level values.
 *)
 
-let ensure_migrations_table (dialect : Dialect.t) (db : Types.db_conn) : (unit, [> Caqti_error.t]) Lwt_result.t =
-  let module Db = (val db : Caqti_lwt.CONNECTION) in
+let default_table = "schema_migrations"
+
+(** Validate that [table] is a safe SQL identifier: it is interpolated into DDL
+    and queries (not bound as a parameter), so it must not allow injection. An
+    optional schema qualifier ([schema.table]) is permitted. *)
+let validate_table_name (table : string) : (unit, Types.error) result =
+  let ok c =
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+    || (c >= '0' && c <= '9') || c = '_' || c = '.' in
+  let ok_first c =
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c = '_' in
+  if table <> "" && ok_first table.[0] && String.for_all ok table then Ok ()
+  else
+    Error (Types.DatabaseError (Types.ValidationError
+      (Printf.sprintf
+         "Invalid migrations table name %S: use only letters, digits, '_' and '.' \
+          (and it must not start with a digit)" table)))
+
+(* Per-call query builders (table name interpolated; values still bound). *)
+let exists_query table =
+  (int64 ->? int64) ~oneshot:true
+    (Printf.sprintf "SELECT version FROM %s WHERE version = ?" table)
+let all_versions_query table =
+  (unit ->* int64) ~oneshot:true
+    (Printf.sprintf "SELECT version FROM %s ORDER BY version ASC" table)
+let all_records_query dialect table =
   let module D = (val Dialect.get_dialect dialect : Dialect.DIALECT) in
+  (unit ->* t2 int64 string) ~oneshot:true
+    (Printf.sprintf "SELECT version, %s FROM %s ORDER BY version ASC"
+       (D.timestamp_to_string "created_at") table)
+let all_checksums_query table =
+  (unit ->* t2 int64 (option string)) ~oneshot:true
+    (Printf.sprintf "SELECT version, checksum FROM %s ORDER BY version ASC" table)
+let insert_query table =
+  (t2 int64 (option string) ->. unit) ~oneshot:true
+    (Printf.sprintf "INSERT INTO %s (version, checksum) VALUES (?, ?)" table)
+let delete_query table =
+  (int64 ->. unit) ~oneshot:true
+    (Printf.sprintf "DELETE FROM %s WHERE version = ?" table)
+let latest_query table =
+  (unit ->? int64) ~oneshot:true
+    (Printf.sprintf "SELECT version FROM %s ORDER BY version DESC LIMIT 1" table)
 
-  let ddl = match D.schema_migrations_ddl with
-    | Some custom_ddl -> custom_ddl
-    | None -> {sql|
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-          version BIGINT PRIMARY KEY,
-          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-      |sql}
-  in
-
-  let query = (unit ->. unit) ddl in
-  Db.exec query ()
-
-let is_applied (db : Types.db_conn) (version : int64) : (bool, [> Caqti_error.t]) Lwt_result.t =
+(** Create the migrations table if absent, and add the [checksum] column to
+    tables created by older versions that lack it (dialect-aware). *)
+let ensure_migrations_table ?(table = default_table) (dialect : Dialect.t) (db : Types.db_conn) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.find_opt migration_exists_query version >|= function
+  let columns =
+    "version BIGINT PRIMARY KEY, \
+     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, \
+     checksum TEXT" in
+  let create_ddl = match dialect with
+    | Dialect.MariaDB -> Printf.sprintf "CREATE TABLE IF NOT EXISTS %s (%s) ENGINE=InnoDB" table columns
+    | Dialect.PostgreSQL | Dialect.SQLite -> Printf.sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" table columns
+  in
+  (* Backfill the checksum column for tables created before it existed. *)
+  let add_checksum_column () =
+    match dialect with
+    | Dialect.PostgreSQL | Dialect.MariaDB ->
+        Db.exec ((unit ->. unit) ~oneshot:true
+          (Printf.sprintf "ALTER TABLE %s ADD COLUMN IF NOT EXISTS checksum TEXT" table)) ()
+    | Dialect.SQLite ->
+        let has_col = (unit ->! int) ~oneshot:true
+          (Printf.sprintf "SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = 'checksum'" table) in
+        Db.find has_col () >>= (function
+          | Error e -> Lwt.return_error e
+          | Ok 0 ->
+              Db.exec ((unit ->. unit) ~oneshot:true
+                (Printf.sprintf "ALTER TABLE %s ADD COLUMN checksum TEXT" table)) ()
+          | Ok _ -> Lwt_result.return ())
+  in
+  Db.exec ((unit ->. unit) ~oneshot:true create_ddl) () >>= function
+  | Error e -> Lwt.return_error e
+  | Ok () -> add_checksum_column ()
+
+let is_applied ?(table = default_table) (db : Types.db_conn) (version : int64) : (bool, [> Caqti_error.t]) Lwt_result.t =
+  let module Db = (val db : Caqti_lwt.CONNECTION) in
+  Db.find_opt (exists_query table) version >|= function
   | Ok (Some _) -> Ok true
   | Ok None -> Ok false
   | Error e -> Error e
 
-let get_applied_versions (db : Types.db_conn) : (int64 list, [> Caqti_error.t]) Lwt_result.t =
+let get_applied_versions ?(table = default_table) (db : Types.db_conn) : (int64 list, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.collect_list get_all_versions_query ()
+  Db.collect_list (all_versions_query table) ()
 
-let get_applied_records (dialect : Dialect.t) (db : Types.db_conn) : (migration_record list, [> Caqti_error.t]) Lwt_result.t =
+let get_applied_records ?(table = default_table) (dialect : Dialect.t) (db : Types.db_conn) : (migration_record list, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  let query = get_all_records_query dialect in
-  Db.collect_list query () >|= function
+  Db.collect_list (all_records_query dialect table) () >|= function
   | Ok rows ->
       Ok (List.map (fun (version, created_at) -> { version; created_at }) rows)
   | Error e -> Error e
 
-let get_latest_version (db : Types.db_conn) : (int64 option, [> Caqti_error.t]) Lwt_result.t =
+(** Get all applied (version, checksum) pairs, sorted chronologically.
+    [checksum] is [None] for rows recorded before checksums were tracked. *)
+let get_applied_checksums ?(table = default_table) (db : Types.db_conn) : ((int64 * string option) list, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.find_opt get_latest_version_query ()
+  Db.collect_list (all_checksums_query table) ()
 
-let add_migration (db : Types.db_conn) (version : int64) : (unit, [> Caqti_error.t]) Lwt_result.t =
+let get_latest_version ?(table = default_table) (db : Types.db_conn) : (int64 option, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.exec insert_migration_query version
+  Db.find_opt (latest_query table) ()
 
-let remove_migration (db : Types.db_conn) (version : int64) : (unit, [> Caqti_error.t]) Lwt_result.t =
+let add_migration ?(table = default_table) (db : Types.db_conn) (version : int64) (checksum : string option) : (unit, [> Caqti_error.t]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
-  Db.exec delete_migration_query version
+  Db.exec (insert_query table) (version, checksum)
+
+let remove_migration ?(table = default_table) (db : Types.db_conn) (version : int64) : (unit, [> Caqti_error.t]) Lwt_result.t =
+  let module Db = (val db : Caqti_lwt.CONNECTION) in
+  Db.exec (delete_query table) version
 
 (** Execute raw SQL within a connection.
     Handles multi-statement SQL by splitting and executing each statement.
@@ -259,9 +268,16 @@ let run_in_transaction ?(verbose = false)
                       let* () = log_verbose verbose (Printf.sprintf "%s of migration %Ld completed successfully" action version) in
                       Lwt.return (Success migration)
 
-let run_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
-  run_in_transaction ~verbose ~read_sql:Migration.read_up_sql
-    ~record:add_migration ~action:"migration" db migration
+(** Execute a migration's up SQL within a transaction, recording the version and
+    its checksum. The checksum is computed up front so a file-read error fails
+    before any transaction is started. *)
+let run_migration ?(verbose = false) ?(table = default_table) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
+  match Migration.checksum migration with
+  | Error err -> Lwt.return (Failure (migration, err))
+  | Ok checksum ->
+      run_in_transaction ~verbose ~read_sql:Migration.read_up_sql
+        ~record:(fun db version -> add_migration ~table db version (Some checksum))
+        ~action:"migration" db migration
 
 (** Run [step] over each item in order, accumulating results and stopping
     after the first result for which [is_ok] returns false (that failing
@@ -279,38 +295,85 @@ let run_until_failure ~(step : 'a -> 'b Lwt.t) ~(is_ok : 'b -> bool) (items : 'a
   in
   loop [] items
 
-let run_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
-  run_until_failure ~step:(run_migration ~verbose db) ~is_ok:is_success migrations
+let run_migrations ?(verbose = false) ?(table = default_table) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
+  run_until_failure ~step:(run_migration ~verbose ~table db) ~is_ok:is_success migrations
+
+let out_of_order_problem (applied_versions : int64 list) (pending : Migration.t list) : Types.error option =
+  match applied_versions with
+  | [] -> None
+  | _ ->
+      let latest =
+        List.fold_left (fun a v -> if Int64.compare v a > 0 then v else a)
+          Int64.min_int applied_versions
+      in
+      match List.find_opt (fun m -> Int64.compare m.Migration.version latest < 0) pending with
+      | Some m -> Some (Types.MigrationError (Types.OutOfOrder (m.Migration.version, latest)))
+      | None -> None
 
 (** Compute the pending migrations: all migrations on disk minus those already
-    recorded as applied in the database. Shared by [run_pending] and the
-    higher-level migrate APIs. *)
-let pending_migrations ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+    recorded as applied. Fails with [OutOfOrder] if a pending migration predates
+    the latest applied one (applying it would rewrite history). *)
+let pending_migrations ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
     : (Migration.t list, Types.error) Lwt_result.t =
   match Discovery.find_migrations ~dir:migrations_dir () with
   | Error err -> Lwt.return_error err
   | Ok all_migrations ->
-      get_applied_versions db >>= function
+      get_applied_versions ~table db >>= function
       | Error caqti_err ->
           Lwt.return_error (Types.of_caqti_error ~context:"get applied versions" caqti_err)
       | Ok applied_versions ->
-          Lwt.return_ok (Discovery.find_pending applied_versions all_migrations)
+          let pending = Discovery.find_pending applied_versions all_migrations in
+          (match out_of_order_problem applied_versions pending with
+           | Some err -> Lwt.return_error err
+           | None -> Lwt.return_ok pending)
 
-let run_pending ?(verbose = false) (db : Types.db_conn) (migrations_dir : string)
+let run_pending ?(verbose = false) ?(table = default_table) (db : Types.db_conn) (migrations_dir : string)
     : (execution_result list, Types.error) Lwt_result.t =
-  pending_migrations ~migrations_dir db >>= function
+  pending_migrations ~table ~migrations_dir db >>= function
   | Error err -> Lwt.return_error err
-  | Ok pending -> run_migrations ~verbose db pending >|= fun results -> Ok results
+  | Ok pending -> run_migrations ~verbose ~table db pending >|= fun results -> Ok results
 
-let rollback_migration ?(verbose = false) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
+(** Validate applied migrations against the files on disk:
+    - a recorded version with no file        -> [AppliedFileMissing]
+    - a file whose checksum differs from the recorded one -> [ChecksumMismatch]
+    Rows recorded before checksums were tracked (NULL checksum) are skipped.
+    Returns the first problem found, or [Ok ()] if all are consistent. *)
+let validate ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+    : (unit, Types.error) Lwt_result.t =
+  get_applied_checksums ~table db >>= function
+  | Error e -> Lwt.return_error (Types.of_caqti_error ~context:"read applied checksums" e)
+  | Ok applied ->
+      match Discovery.find_migrations ~dir:migrations_dir () with
+      | Error err -> Lwt.return_error err
+      | Ok all ->
+          let rec check = function
+            | [] -> Lwt.return_ok ()
+            | (version, stored) :: rest ->
+                match List.find_opt (fun m -> Int64.equal m.Migration.version version) all with
+                | None -> Lwt.return_error (Types.MigrationError (Types.AppliedFileMissing version))
+                | Some m ->
+                    match stored with
+                    | None -> check rest  (* pre-checksum row: nothing to compare *)
+                    | Some stored_cs ->
+                        match Migration.checksum m with
+                        | Error err -> Lwt.return_error err
+                        | Ok cur ->
+                            if String.equal cur stored_cs then check rest
+                            else Lwt.return_error
+                                   (Types.MigrationError (Types.ChecksumMismatch (version, m.Migration.file_path)))
+          in
+          check applied
+
+let rollback_migration ?(verbose = false) ?(table = default_table) (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
   run_in_transaction ~verbose ~read_sql:Migration.read_down_sql
-    ~record:remove_migration ~action:"rollback" db migration
+    ~record:(fun db version -> remove_migration ~table db version)
+    ~action:"rollback" db migration
 
 (** Rollback multiple migrations in reverse chronological order.
     Stops at the first failure and returns all results. *)
-let rollback_migrations ?(verbose = false) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
+let rollback_migrations ?(verbose = false) ?(table = default_table) (db : Types.db_conn) (migrations : Migration.t list) : execution_result list Lwt.t =
   let sorted = List.sort (fun a b -> Int64.compare b.Migration.version a.Migration.version) migrations in
-  run_until_failure ~step:(rollback_migration ~verbose db) ~is_ok:is_success sorted
+  run_until_failure ~step:(rollback_migration ~verbose ~table db) ~is_ok:is_success sorted
 
 type rollback_strategy =
   | Step of int
@@ -319,9 +382,9 @@ type rollback_strategy =
 
 (** The migrations that are both recorded as applied and present on disk,
     in chronological order. Shared by rollback selection and status reporting. *)
-let applied_migrations ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+let applied_migrations ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
     : (Migration.t list, Types.error) Lwt_result.t =
-  get_applied_versions db >>= function
+  get_applied_versions ~table db >>= function
   | Error caqti_err ->
       Lwt.return_error (Types.of_caqti_error ~context:"Failed to get applied versions" caqti_err)
   | Ok applied_versions ->
@@ -334,13 +397,13 @@ let applied_migrations ?(migrations_dir = Discovery.default_migrations_dir) (db 
                (fun m -> Discovery.Int64Set.mem m.Migration.version applied_set)
                all_migrations)
 
-let rollback_targets ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+let rollback_targets ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
     (strategy : rollback_strategy) : (Migration.t list, Types.error) Lwt_result.t =
   match strategy with
   | Step n when n <= 0 ->
       Lwt.return_error (Types.DatabaseError (Types.ValidationError "Step must be a positive number"))
   | _ ->
-      applied_migrations ~migrations_dir db >>= function
+      applied_migrations ~table ~migrations_dir db >>= function
       | Error err -> Lwt.return_error err
       | Ok applied ->
           let targets = match strategy with
@@ -357,21 +420,21 @@ let rollback_targets ?(migrations_dir = Discovery.default_migrations_dir) (db : 
           in
           Lwt.return_ok targets
 
-let run_rollback ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir)
+let run_rollback ?(verbose = false) ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir)
     (db : Types.db_conn) (strategy : rollback_strategy)
     : (execution_result list, Types.error) Lwt_result.t =
-  rollback_targets ~migrations_dir db strategy >>= function
+  rollback_targets ~table ~migrations_dir db strategy >>= function
   | Error err -> Lwt.return_error err
-  | Ok targets -> rollback_migrations ~verbose db targets >|= fun results -> Ok results
+  | Ok targets -> rollback_migrations ~verbose ~table db targets >|= fun results -> Ok results
 
-let rollback_step ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (step : int)
+let rollback_step ?(verbose = false) ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (step : int)
     : (execution_result list, Types.error) Lwt_result.t =
-  run_rollback ~verbose ~migrations_dir db (Step step)
+  run_rollback ~verbose ~table ~migrations_dir db (Step step)
 
-let rollback_to ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (target_version : int64)
+let rollback_to ?(verbose = false) ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) (target_version : int64)
     : (execution_result list, Types.error) Lwt_result.t =
-  run_rollback ~verbose ~migrations_dir db (To target_version)
+  run_rollback ~verbose ~table ~migrations_dir db (To target_version)
 
-let rollback_all ?(verbose = false) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
+let rollback_all ?(verbose = false) ?(table = default_table) ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn)
     : (execution_result list, Types.error) Lwt_result.t =
-  run_rollback ~verbose ~migrations_dir db All
+  run_rollback ~verbose ~table ~migrations_dir db All

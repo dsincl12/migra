@@ -30,11 +30,11 @@ let get_database (uri : Uri.t) : (string, Types.error) result =
 
 (** Replace the password in a connection URL with a fixed [*****] mask for safe
     display and logging. URLs without a password (or SQLite paths) are returned
-    unchanged. The mask is a fixed width so it does not reveal the real password
+    unchanged. The mask is a fixed width so it does not reveal the password
     length.
 
-    [Uri.to_string] would percent-encode the [*] characters, so we round-trip
-    through an alphanumeric token and substitute the mask afterwards. *)
+    The substitution goes via an alphanumeric placeholder because
+    [Uri.to_string] would percent-encode the [*] characters directly. *)
 let redact_url (url : string) : string =
   let uri = Uri.of_string url in
   match Uri.password uri with
@@ -76,7 +76,7 @@ let is_missing_driver_error (err_msg : string) : bool =
   string_contains err_msg "suitable driver" || string_contains err_msg "not found"
 
 (** Build a helpful "driver not installed" message for [database_url]'s scheme.
-    Only called once we know the failure is a missing-driver error. *)
+    Assumes the failure is a missing-driver error (see {!is_missing_driver_error}). *)
 let missing_driver_message (database_url : string) : string =
   let scheme = Uri.of_string database_url |> Uri.scheme |> Option.value ~default:"unknown" in
   let driver_name, install_cmd = match scheme with
@@ -159,9 +159,9 @@ let get_admin_database_url (dialect : Dialect.t) (uri : Uri.t) : (string, Types.
       | Error err -> Error err
       | Ok _host ->
           (* Derive the admin URL by transforming the original URI rather than
-             reconstructing it from parts. This preserves userinfo (including the
-             password), query parameters (e.g. sslmode), and IPv6 host bracketing,
-             which the old string-concatenation approach silently dropped. *)
+             rebuilding it from parts, so userinfo (including the password),
+             query parameters (e.g. sslmode), and IPv6 host bracketing are
+             preserved. *)
           let scheme = match dialect with
             | Dialect.PostgreSQL -> "postgresql"
             | Dialect.MariaDB -> "mariadb"

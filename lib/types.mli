@@ -26,6 +26,9 @@ type migration_error =
   | EmptySection of string * string
   | ParseError of file_error
   | VersionConflict of int64 * string * string  (** version, file_a, file_b *)
+  | ChecksumMismatch of int64 * string  (** version, file: applied file was modified *)
+  | AppliedFileMissing of int64         (** version recorded as applied but no file *)
+  | OutOfOrder of int64 * int64         (** pending version, latest applied version *)
 
 (** Top-level error type for all Migra operations *)
 type error =
