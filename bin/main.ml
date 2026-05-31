@@ -37,6 +37,11 @@ let generate_cmd =
   let info = Cmd.info "generate" ~doc in
   Cmd.v info Term.(const run $ name)
 
+(* Shared --table option: name of the migrations-tracking table *)
+let table_arg =
+  Arg.(value & opt string Migra.Runner.default_table & info ["t"; "table"] ~docv:"NAME"
+    ~doc:"Name of the migrations-tracking table (default: schema_migrations)")
+
 (* Migrate command *)
 let migrate_cmd =
   let migrations_dir =
@@ -46,12 +51,12 @@ let migrate_cmd =
   let verbose =
     Arg.(value & flag & info ["v"; "verbose"] ~doc:"Show SQL statements and transaction details")
   in
-  let run migrations_dir verbose =
-    run_lwt (fun () -> Commands.migrate migrations_dir verbose (require_database_url ()))
+  let run migrations_dir table verbose =
+    run_lwt (fun () -> Commands.migrate migrations_dir table verbose (require_database_url ()))
   in
   let doc = "Run all pending migrations" in
   let info = Cmd.info "migrate" ~doc in
-  Cmd.v info Term.(const run $ migrations_dir $ verbose)
+  Cmd.v info Term.(const run $ migrations_dir $ table_arg $ verbose)
 
 (* Init command *)
 let init_cmd =
@@ -71,12 +76,12 @@ let setup_cmd =
   let verbose =
     Arg.(value & flag & info ["v"; "verbose"] ~doc:"Show SQL statements and transaction details")
   in
-  let run migrations_dir verbose =
-    run_lwt (fun () -> Commands.setup migrations_dir verbose (require_database_url ()))
+  let run migrations_dir table verbose =
+    run_lwt (fun () -> Commands.setup migrations_dir table verbose (require_database_url ()))
   in
   let doc = "Create the database and run migrations" in
   let info = Cmd.info "setup" ~doc in
-  Cmd.v info Term.(const run $ migrations_dir $ verbose)
+  Cmd.v info Term.(const run $ migrations_dir $ table_arg $ verbose)
 
 (* Drop command *)
 let drop_cmd =
@@ -96,12 +101,12 @@ let reset_cmd =
   let verbose =
     Arg.(value & flag & info ["v"; "verbose"] ~doc:"Show SQL statements and transaction details")
   in
-  let run migrations_dir verbose =
-    run_lwt (fun () -> Commands.reset migrations_dir verbose (require_database_url ()))
+  let run migrations_dir table verbose =
+    run_lwt (fun () -> Commands.reset migrations_dir table verbose (require_database_url ()))
   in
   let doc = "Drop the database and recreate it with migrations" in
   let info = Cmd.info "reset" ~doc in
-  Cmd.v info Term.(const run $ migrations_dir $ verbose)
+  Cmd.v info Term.(const run $ migrations_dir $ table_arg $ verbose)
 
 (* Rollback command *)
 let rollback_cmd =
@@ -123,14 +128,14 @@ let rollback_cmd =
   let verbose =
     Arg.(value & flag & info ["v"; "verbose"] ~doc:"Show SQL statements and transaction details")
   in
-  let run migrations_dir step to_version all verbose =
+  let run migrations_dir table step to_version all verbose =
     run_lwt (fun () ->
-      Commands.rollback migrations_dir step to_version all verbose (require_database_url ())
+      Commands.rollback migrations_dir table step to_version all verbose (require_database_url ())
     )
   in
   let doc = "Rollback migrations" in
   let info = Cmd.info "rollback" ~doc in
-  Cmd.v info Term.(const run $ migrations_dir $ step $ to_version $ all $ verbose)
+  Cmd.v info Term.(const run $ migrations_dir $ table_arg $ step $ to_version $ all $ verbose)
 
 (* Status command *)
 let status_cmd =
@@ -138,12 +143,12 @@ let status_cmd =
     Arg.(value & opt string "migrations" & info ["d"; "dir"] ~docv:"DIR"
       ~doc:"Migrations directory (default: migrations)")
   in
-  let run migrations_dir =
-    run_lwt (fun () -> Commands.status migrations_dir (require_database_url ()))
+  let run migrations_dir table =
+    run_lwt (fun () -> Commands.status migrations_dir table (require_database_url ()))
   in
   let doc = "Show migration status" in
   let info = Cmd.info "status" ~doc in
-  Cmd.v info Term.(const run $ migrations_dir)
+  Cmd.v info Term.(const run $ migrations_dir $ table_arg)
 
 (* Main command group *)
 let main_cmd =

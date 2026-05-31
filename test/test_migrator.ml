@@ -17,6 +17,7 @@ let test_run_pending () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function
@@ -48,6 +49,7 @@ let test_run_no_pending () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function
@@ -83,6 +85,7 @@ let test_run_stops_on_failure () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function
@@ -122,6 +125,7 @@ let test_rollback_step () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function
@@ -162,6 +166,7 @@ let test_rollback_to () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function
@@ -193,6 +198,7 @@ let test_rollback_all () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function
@@ -216,6 +222,7 @@ let test_rollback_empty () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.rollback config All >>= function
@@ -246,6 +253,7 @@ let test_status () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.status config >>= function
@@ -291,6 +299,7 @@ let test_status_mixed () =
         database_url = db_url;
         migrations_dir;
         verbose = false;
+        table = Migra.Runner.default_table;
       } in
 
       Migra.Migrator.run config >>= function

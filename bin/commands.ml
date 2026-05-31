@@ -3,16 +3,20 @@
 open Lwt.Infix
 open Migra
 
-(** Connect to database, initialize schema, run [f]; returns an exit code.
+(** Connect to database, initialize the [table], run [f]; returns an exit code.
     [f] itself returns the exit code for the successful-connection case. *)
-let with_initialized_db database_url (f : Types.db_conn -> int Lwt.t) : int Lwt.t =
+let with_initialized_db ?(table = Runner.default_table) database_url (f : Types.db_conn -> int Lwt.t) : int Lwt.t =
+  match Runner.validate_table_name table with
+  | Error err ->
+      Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () -> Lwt.return 1
+  | Ok () ->
   match Dialect.detect_from_url database_url with
   | Error msg ->
       Lwt_io.eprintlf "Invalid DATABASE_URL: %s" msg >>= fun () ->
       Lwt.return 1
   | Ok dialect ->
       Database.with_db database_url (fun db ->
-        Lwt.bind (Runner.ensure_migrations_table dialect db) (function
+        Lwt.bind (Runner.ensure_migrations_table ~table dialect db) (function
         | Error err ->
             Lwt_io.eprintlf "Failed to initialize database: %s"
               (Caqti_error.show err) >>= fun () ->
@@ -27,11 +31,11 @@ let with_initialized_db database_url (f : Types.db_conn -> int Lwt.t) : int Lwt.
 let migration_filename (m : Migration.t) : string =
   Filename.basename m.file_path
 
-let run_migration_with_progress ?(verbose = false) db (migration : Migration.t) : Runner.execution_result Lwt.t =
+let run_migration_with_progress ?(verbose = false) ?(table = Runner.default_table) db (migration : Migration.t) : Runner.execution_result Lwt.t =
   let filename = migration_filename migration in
   Lwt_io.printlf "== Running %s" filename >>= fun () ->
   let start_time = Unix.gettimeofday () in
-  Runner.run_migration ~verbose db migration >>= fun result ->
+  Runner.run_migration ~verbose ~table db migration >>= fun result ->
   let elapsed = Unix.gettimeofday () -. start_time in
   (match result with
    | Runner.Success migration ->
@@ -41,11 +45,11 @@ let run_migration_with_progress ?(verbose = false) db (migration : Migration.t) 
        Lwt_io.eprintlf "** Migration %Ld failed: %s" migration.version (Types.show_error err) >>= fun () ->
        Lwt.return result)
 
-let rollback_migration_with_progress ?(verbose = false) db (migration : Migration.t) : Runner.execution_result Lwt.t =
+let rollback_migration_with_progress ?(verbose = false) ?(table = Runner.default_table) db (migration : Migration.t) : Runner.execution_result Lwt.t =
   let filename = migration_filename migration in
   Lwt_io.printlf "== Rolling back %s" filename >>= fun () ->
   let start_time = Unix.gettimeofday () in
-  Runner.rollback_migration ~verbose db migration >>= fun result ->
+  Runner.rollback_migration ~verbose ~table db migration >>= fun result ->
   let elapsed = Unix.gettimeofday () -. start_time in
   (match result with
    | Runner.Success migration ->
@@ -58,17 +62,17 @@ let rollback_migration_with_progress ?(verbose = false) db (migration : Migratio
 (** Run multiple migrations with progress, stopping on first failure.
     Shares Runner's sequential engine; the progress-printing per-migration
     action is the [step]. *)
-let run_migrations_with_progress ?(verbose = false) db migrations : Runner.execution_result list Lwt.t =
+let run_migrations_with_progress ?(verbose = false) ?(table = Runner.default_table) db migrations : Runner.execution_result list Lwt.t =
   Runner.run_until_failure
-    ~step:(run_migration_with_progress ~verbose db)
+    ~step:(run_migration_with_progress ~verbose ~table db)
     ~is_ok:Runner.is_success
     migrations
 
-let rollback_migrations_with_progress ?(verbose = false) db migrations : Runner.execution_result list Lwt.t =
+let rollback_migrations_with_progress ?(verbose = false) ?(table = Runner.default_table) db migrations : Runner.execution_result list Lwt.t =
   let sorted = List.sort (fun a b ->
     Int64.compare b.Migration.version a.Migration.version) migrations in
   Runner.run_until_failure
-    ~step:(rollback_migration_with_progress ~verbose db)
+    ~step:(rollback_migration_with_progress ~verbose ~table db)
     ~is_ok:Runner.is_success
     sorted
 
@@ -112,19 +116,25 @@ let generate name =
         Lwt_io.printlf "Creating %s" filepath >>= fun () ->
         Lwt.return 0
 
-let migrate migrations_dir verbose database_url =
+let migrate migrations_dir table verbose database_url =
   announce_dialect verbose database_url >>= fun () ->
-  with_initialized_db database_url (fun db ->
-    Runner.pending_migrations ~migrations_dir db >>= function
+  with_initialized_db ~table database_url (fun db ->
+    (* Refuse to migrate if an applied migration was modified or went missing. *)
+    Runner.validate ~table ~migrations_dir db >>= function
     | Error err ->
         Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
         Lwt.return 1
-    | Ok [] ->
-        Lwt_io.printl "No pending migrations" >>= fun () ->
-        Lwt.return 0
-    | Ok pending ->
-        run_migrations_with_progress ~verbose db pending >>= fun results ->
-        Lwt.return (code_of_results results)
+    | Ok () ->
+        Runner.pending_migrations ~table ~migrations_dir db >>= function
+        | Error err ->
+            Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
+            Lwt.return 1
+        | Ok [] ->
+            Lwt_io.printl "No pending migrations" >>= fun () ->
+            Lwt.return 0
+        | Ok pending ->
+            run_migrations_with_progress ~verbose ~table db pending >>= fun results ->
+            Lwt.return (code_of_results results)
   )
 
 let init database_url =
@@ -143,7 +153,7 @@ let init database_url =
           Lwt_io.printlf "Database '%s' created successfully" db_name >>= fun () ->
           Lwt.return 0
 
-let setup migrations_dir verbose database_url =
+let setup migrations_dir table verbose database_url =
   announce_dialect verbose database_url >>= fun () ->
   let uri = Uri.of_string database_url in
   match Database.get_database uri with
@@ -158,8 +168,8 @@ let setup migrations_dir verbose database_url =
           Lwt.return 1
       | Ok () ->
           Lwt_io.printlf "Database '%s' ready\n" db_name >>= fun () ->
-          with_initialized_db database_url (fun db ->
-            Runner.pending_migrations ~migrations_dir db >>= function
+          with_initialized_db ~table database_url (fun db ->
+            Runner.pending_migrations ~table ~migrations_dir db >>= function
             | Error err ->
                 Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
                 Lwt.return 1
@@ -168,7 +178,7 @@ let setup migrations_dir verbose database_url =
                 Lwt_io.printl "Setup complete!" >>= fun () ->
                 Lwt.return 0
             | Ok pending ->
-                run_migrations_with_progress ~verbose db pending >>= fun results ->
+                run_migrations_with_progress ~verbose ~table db pending >>= fun results ->
                 match code_of_results results with
                 | 0 -> Lwt_io.printl "Setup complete!" >>= fun () -> Lwt.return 0
                 | code -> Lwt.return code
@@ -190,7 +200,7 @@ let drop database_url =
           Lwt_io.printlf "Database '%s' dropped successfully" db_name >>= fun () ->
           Lwt.return 0
 
-let reset migrations_dir verbose database_url =
+let reset migrations_dir table verbose database_url =
   announce_dialect verbose database_url >>= fun () ->
   let uri = Uri.of_string database_url in
   match Database.get_database uri with
@@ -216,8 +226,8 @@ let reset migrations_dir verbose database_url =
           | Ok () ->
               Lwt_io.printlf "Database '%s' created\n" db_name >>= fun () ->
               (* Step 3: Run migrations *)
-              with_initialized_db database_url (fun db ->
-                Runner.pending_migrations ~migrations_dir db >>= function
+              with_initialized_db ~table database_url (fun db ->
+                Runner.pending_migrations ~table ~migrations_dir db >>= function
                 | Error err ->
                     Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
                     Lwt.return 1
@@ -226,13 +236,13 @@ let reset migrations_dir verbose database_url =
                     Lwt_io.printl "Reset complete!" >>= fun () ->
                     Lwt.return 0
                 | Ok pending ->
-                    run_migrations_with_progress ~verbose db pending >>= fun results ->
+                    run_migrations_with_progress ~verbose ~table db pending >>= fun results ->
                     match code_of_results results with
                     | 0 -> Lwt_io.printl "Reset complete!" >>= fun () -> Lwt.return 0
                     | code -> Lwt.return code
               )
 
-let rollback migrations_dir step to_version all verbose database_url =
+let rollback migrations_dir table step to_version all verbose database_url =
   announce_dialect verbose database_url >>= fun () ->
   (* Map the CLI flags to a rollback strategy: --all wins, then --to, else --step (default 1). *)
   let strategy =
@@ -241,8 +251,8 @@ let rollback migrations_dir step to_version all verbose database_url =
       | Some target -> Runner.To target
       | None -> Runner.Step (Option.value step ~default:1)
   in
-  with_initialized_db database_url (fun db ->
-    Runner.rollback_targets ~migrations_dir db strategy >>= function
+  with_initialized_db ~table database_url (fun db ->
+    Runner.rollback_targets ~table ~migrations_dir db strategy >>= function
     | Error err ->
         Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
         Lwt.return 1
@@ -250,13 +260,13 @@ let rollback migrations_dir step to_version all verbose database_url =
         Lwt_io.printl "No migrations to rollback" >>= fun () ->
         Lwt.return 0
     | Ok to_rollback ->
-        rollback_migrations_with_progress ~verbose db to_rollback >>= fun results ->
+        rollback_migrations_with_progress ~verbose ~table db to_rollback >>= fun results ->
         Lwt.return (code_of_results results)
   )
 
-let status migrations_dir database_url =
-  with_initialized_db database_url (fun db ->
-    Runner.get_applied_versions db >>= function
+let status migrations_dir table database_url =
+  with_initialized_db ~table database_url (fun db ->
+    Runner.get_applied_versions ~table db >>= function
     | Error err ->
         Lwt_io.eprintlf "Failed to get applied migrations: %s"
           (Caqti_error.show err) >>= fun () ->

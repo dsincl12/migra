@@ -37,12 +37,13 @@ type config = {
   database_url : string;      (** Database connection URL *)
   migrations_dir : string;    (** Directory containing .sql migration files *)
   verbose : bool;             (** Enable SQL statement logging *)
+  table : string;             (** Name of the migrations-tracking table *)
 }
 
-(** Build a {!config}. [migrations_dir] defaults to ["migrations"] and
-    [verbose] to [false]. Preferred over the record literal:
-    {[ Migrator.make ~database_url () ]} *)
-val make : ?migrations_dir:string -> ?verbose:bool -> database_url:string -> unit -> config
+(** Build a {!config}. [migrations_dir] defaults to ["migrations"], [verbose] to
+    [false], and [table] to ["schema_migrations"]. Preferred over the record
+    literal: {[ Migrator.make ~database_url () ]} *)
+val make : ?migrations_dir:string -> ?verbose:bool -> ?table:string -> database_url:string -> unit -> config
 
 (** {1 Results} *)
 

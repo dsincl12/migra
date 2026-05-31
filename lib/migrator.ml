@@ -9,13 +9,14 @@ type config = {
   database_url : string;
   migrations_dir : string;
   verbose : bool;
+  table : string;
 }
 
-(** Build a {!config}, defaulting [migrations_dir] to "migrations" and
-    [verbose] to false. Preferred over writing the record literal directly. *)
+(** Build a {!config}, defaulting [migrations_dir] to "migrations", [verbose] to
+    false, and [table] to "schema_migrations". Preferred over the record literal. *)
 let make ?(migrations_dir = Discovery.default_migrations_dir) ?(verbose = false)
-    ~database_url () : config =
-  { database_url; migrations_dir; verbose }
+    ?(table = Runner.default_table) ~database_url () : config =
+  { database_url; migrations_dir; verbose; table }
 
 type migration_result = {
   version : int64;
@@ -59,9 +60,12 @@ type rollback_strategy = Runner.rollback_strategy =
     Every failure that prevents running migrations - bad URL, connection
     failure, or table setup - is returned as a structured [Error], never raised
     and never stringified. [f]'s own result is propagated unchanged. *)
-let with_initialized_db database_url
+let with_initialized_db ~(table : string) database_url
     (f : Dialect.t -> Types.db_conn -> ('a, Types.error) Lwt_result.t)
     : ('a, Types.error) Lwt_result.t =
+  match Runner.validate_table_name table with
+  | Error err -> Lwt.return_error err
+  | Ok () ->
   match Dialect.detect_from_url database_url with
   | Error msg -> Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
   | Ok dialect ->
@@ -71,7 +75,7 @@ let with_initialized_db database_url
           let module Db = (val db : Caqti_lwt.CONNECTION) in
           Lwt.finalize
             (fun () ->
-              Runner.ensure_migrations_table dialect db >>= function
+              Runner.ensure_migrations_table ~table dialect db >>= function
               | Error err ->
                   Lwt.return_error
                     (Types.of_caqti_error ~context:"ensure schema_migrations table" err)
@@ -102,23 +106,25 @@ let timed (op : Migration.t -> Runner.execution_result Lwt.t) (migration : Migra
   op migration >>= fun result ->
   Lwt.return (to_migration_result result (Unix.gettimeofday () -. start_time))
 
-let run_migration_timed ?(verbose = false) db = timed (Runner.run_migration ~verbose db)
+let run_migration_timed ?(verbose = false) ?(table = Runner.default_table) db =
+  timed (Runner.run_migration ~verbose ~table db)
 
-let rollback_migration_timed ?(verbose = false) db = timed (Runner.rollback_migration ~verbose db)
+let rollback_migration_timed ?(verbose = false) ?(table = Runner.default_table) db =
+  timed (Runner.rollback_migration ~verbose ~table db)
 
 (** Run multiple migrations, stopping on first failure.
     Same sequential engine as Runner, with the timed result as the step. *)
-let run_migrations_internal ?(verbose = false) db migrations : migration_result list Lwt.t =
+let run_migrations_internal ?(verbose = false) ?(table = Runner.default_table) db migrations : migration_result list Lwt.t =
   Runner.run_until_failure
-    ~step:(run_migration_timed ~verbose db)
+    ~step:(run_migration_timed ~verbose ~table db)
     ~is_ok:(fun r -> r.success)
     migrations
 
-let rollback_migrations_internal ?(verbose = false) db migrations : migration_result list Lwt.t =
+let rollback_migrations_internal ?(verbose = false) ?(table = Runner.default_table) db migrations : migration_result list Lwt.t =
   let sorted = List.sort (fun a b ->
     Int64.compare b.Migration.version a.Migration.version) migrations in
   Runner.run_until_failure
-    ~step:(rollback_migration_timed ~verbose db)
+    ~step:(rollback_migration_timed ~verbose ~table db)
     ~is_ok:(fun r -> r.success)
     sorted
 
@@ -128,26 +134,31 @@ let make_operation_result (results : migration_result list) : operation_result =
   { migrations = results; success_count; failure_count }
 
 let run (config : config) =
-  with_initialized_db config.database_url (fun _dialect db ->
-    Runner.pending_migrations ~migrations_dir:config.migrations_dir db >>= function
+  with_initialized_db ~table:config.table config.database_url (fun _dialect db ->
+    (* Refuse to migrate if an already-applied migration was modified or its
+       file went missing. *)
+    Runner.validate ~table:config.table ~migrations_dir:config.migrations_dir db >>= function
     | Error err -> Lwt.return_error err
-    | Ok pending ->
-        run_migrations_internal ~verbose:config.verbose db pending >>= fun results ->
-        Lwt.return_ok (make_operation_result results)
+    | Ok () ->
+        Runner.pending_migrations ~table:config.table ~migrations_dir:config.migrations_dir db >>= function
+        | Error err -> Lwt.return_error err
+        | Ok pending ->
+            run_migrations_internal ~verbose:config.verbose ~table:config.table db pending >>= fun results ->
+            Lwt.return_ok (make_operation_result results)
   )
 
 let rollback (config : config) strategy =
-  with_initialized_db config.database_url (fun _dialect db ->
-    Runner.rollback_targets ~migrations_dir:config.migrations_dir db strategy >>= function
+  with_initialized_db ~table:config.table config.database_url (fun _dialect db ->
+    Runner.rollback_targets ~table:config.table ~migrations_dir:config.migrations_dir db strategy >>= function
     | Error err -> Lwt.return_error err
     | Ok to_rollback ->
-        rollback_migrations_internal ~verbose:config.verbose db to_rollback >>= fun results ->
+        rollback_migrations_internal ~verbose:config.verbose ~table:config.table db to_rollback >>= fun results ->
         Lwt.return_ok (make_operation_result results)
   )
 
 let status (cfg : config) =
-  with_initialized_db cfg.database_url (fun dialect db ->
-    Runner.get_applied_records dialect db >>= function
+  with_initialized_db ~table:cfg.table cfg.database_url (fun dialect db ->
+    Runner.get_applied_records ~table:cfg.table dialect db >>= function
     | Error err ->
         Lwt.return_error (Types.of_caqti_error ~context:"get applied migrations" err)
     | Ok applied_records ->
