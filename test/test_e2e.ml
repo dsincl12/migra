@@ -368,9 +368,105 @@ let test_postgres_function_migration () =
     )
   )
 
+(** E2E: a checksum is recorded on apply; editing an applied migration is caught
+    by [validate], while an unchanged tree validates cleanly. *)
+let test_checksum_validation () =
+  with_test_db_pooled "e2e_checksum" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let v1 = 20240115120000L in
+      let f1 = create_migration_with_sections migrations_dir v1 "t"
+        "CREATE TABLE cks (id int);" "DROP TABLE cks;" in
+      with_initialized_db db_url (fun db ->
+        Migra.Runner.run_pending db migrations_dir >>= function
+        | Error msg -> Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
+        | Ok _ ->
+            Migra.Runner.get_applied_checksums db >>= fun cks ->
+            (match cks with
+             | Ok [ (v, Some _) ] when Int64.equal v v1 -> ()
+             | _ -> Alcotest.fail "expected one applied migration with a checksum");
+            Migra.Runner.validate ~migrations_dir db >>= fun ok ->
+            Alcotest.(check bool) "validate ok when unchanged" true (Result.is_ok ok);
+            let oc = open_out f1 in
+            output_string oc "-- +migrate up\nCREATE TABLE cks (id int, extra int);\n-- +migrate down\nDROP TABLE cks;\n";
+            close_out oc;
+            Migra.Runner.validate ~migrations_dir db >>= fun bad ->
+            (match bad with
+             | Error (Migra.Types.MigrationError (Migra.Types.ChecksumMismatch (v, _))) when Int64.equal v v1 ->
+                 Lwt.return_unit
+             | _ -> Alcotest.fail "expected ChecksumMismatch after edit")
+      )
+    )
+  )
+
+let test_missing_file_detection () =
+  with_test_db_pooled "e2e_missing" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let v1 = 20240115120000L in
+      let f1 = create_migration_with_sections migrations_dir v1 "t"
+        "CREATE TABLE mf (id int);" "DROP TABLE mf;" in
+      with_initialized_db db_url (fun db ->
+        Migra.Runner.run_pending db migrations_dir >>= function
+        | Error msg -> Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
+        | Ok _ ->
+            Sys.remove f1;
+            Migra.Runner.validate ~migrations_dir db >>= fun r ->
+            (match r with
+             | Error (Migra.Types.MigrationError (Migra.Types.AppliedFileMissing v)) when Int64.equal v v1 ->
+                 Lwt.return_unit
+             | _ -> Alcotest.fail "expected AppliedFileMissing")
+      )
+    )
+  )
+
+let test_out_of_order_detection () =
+  with_test_db_pooled "e2e_ooo" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let _ = create_migration_with_sections migrations_dir 20240115130000L "newer"
+        "CREATE TABLE ooo (id int);" "DROP TABLE ooo;" in
+      with_initialized_db db_url (fun db ->
+        Migra.Runner.run_pending db migrations_dir >>= function
+        | Error msg -> Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
+        | Ok _ ->
+            let _ = create_migration_with_sections migrations_dir 20240115120000L "older"
+              "CREATE TABLE ooo2 (id int);" "DROP TABLE ooo2;" in
+            Migra.Runner.pending_migrations ~migrations_dir db >>= fun r ->
+            (match r with
+             | Error (Migra.Types.MigrationError (Migra.Types.OutOfOrder _)) -> Lwt.return_unit
+             | _ -> Alcotest.fail "expected OutOfOrder")
+      )
+    )
+  )
+
+let test_custom_table () =
+  with_test_db_pooled "e2e_custom_table" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let table = "my_migrations" in
+      let v1 = 20240115120000L in
+      let _ = create_migration_with_sections migrations_dir v1 "t"
+        "CREATE TABLE ctbl (id int);" "DROP TABLE ctbl;" in
+      Migra.Database.connect_db db_url >>= function
+      | Error e -> Lwt.fail_with (Migra.Types.show_error e)
+      | Ok db ->
+          Migra.Runner.ensure_migrations_table ~table Migra.Dialect.PostgreSQL db >>= function
+          | Error e -> Alcotest.fail (Printf.sprintf "ensure failed: %s" (Caqti_error.show e))
+          | Ok () ->
+              Migra.Runner.run_pending ~table db migrations_dir >>= function
+              | Error msg -> Alcotest.fail (Printf.sprintf "run_pending failed: %s" (Migra.Types.show_error msg))
+              | Ok _ ->
+                  Migra.Runner.get_applied_versions ~table db >>= fun r ->
+                  (match r with
+                   | Ok [ v ] when Int64.equal v v1 -> Lwt.return_unit
+                   | _ -> Alcotest.fail "migration not tracked in custom table")
+    )
+  )
+
 let suite = [
   "fresh_setup_workflow", `Quick, test_fresh_setup_workflow;
   "postgres_function_migration", `Quick, test_postgres_function_migration;
+  "checksum_validation", `Quick, test_checksum_validation;
+  "missing_file_detection", `Quick, test_missing_file_detection;
+  "out_of_order_detection", `Quick, test_out_of_order_detection;
+  "custom_table", `Quick, test_custom_table;
   "incremental_migrations", `Quick, test_incremental_migrations;
   "rollback_workflow", `Quick, test_rollback_workflow;
   "rollback_to_workflow", `Quick, test_rollback_to_workflow;

@@ -295,9 +295,40 @@ let test_parse_section_exact_marker () =
    | Some s -> Alcotest.(check bool) "exact up section found" true (String.length s > 0)
    | None -> Alcotest.fail "expected the up section to be found")
 
+let test_checksum () =
+  Lwt_main.run (
+    with_temp_dir "checksum" (fun dir ->
+      let f = create_migration_with_sections dir 20240115120000L "t"
+        "CREATE TABLE c (id int);" "DROP TABLE c;" in
+      let m = match Migra.Migration.from_file f with
+        | Ok m -> m | Error _ -> Alcotest.fail "from_file failed" in
+      let cs1 = match Migra.Migration.checksum m with Ok c -> c | Error _ -> Alcotest.fail "checksum failed" in
+      let cs2 = match Migra.Migration.checksum m with Ok c -> c | Error _ -> Alcotest.fail "checksum failed" in
+      Alcotest.(check string) "deterministic" cs1 cs2;
+      let oc = open_out f in
+      output_string oc "-- +migrate up\nCREATE TABLE c (id int, x int);\n-- +migrate down\nDROP TABLE c;\n";
+      close_out oc;
+      let cs3 = match Migra.Migration.checksum m with Ok c -> c | Error _ -> Alcotest.fail "checksum failed" in
+      Alcotest.(check bool) "changes on edit" true (cs1 <> cs3);
+      Lwt.return_unit
+    )
+  )
+
+let test_validate_table_name () =
+  let ok n = Result.is_ok (Migra.Runner.validate_table_name n) in
+  Alcotest.(check bool) "plain" true (ok "schema_migrations");
+  Alcotest.(check bool) "schema-qualified" true (ok "public.schema_migrations");
+  Alcotest.(check bool) "underscore start" true (ok "_t");
+  Alcotest.(check bool) "reject empty" false (ok "");
+  Alcotest.(check bool) "reject space" false (ok "my table");
+  Alcotest.(check bool) "reject injection" false (ok "t; DROP TABLE x");
+  Alcotest.(check bool) "reject leading digit" false (ok "1t")
+
 let async_of_sync f () = f (); Lwt.return_unit
 
 let suite = [
+  "checksum", `Quick, async_of_sync test_checksum;
+  "validate_table_name", `Quick, async_of_sync test_validate_table_name;
   "parse_section_exact_marker", `Quick, async_of_sync test_parse_section_exact_marker;
   "generate_version", `Quick, async_of_sync test_generate_version;
   "parse_version_valid", `Quick, async_of_sync test_parse_version_valid;
