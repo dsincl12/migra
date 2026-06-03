@@ -116,7 +116,13 @@ let generate name =
         Lwt_io.printlf "Creating %s" filepath >>= fun () ->
         Lwt.return 0
 
-let migrate migrations_dir table verbose database_url =
+let print_plan verb (migrations : Migration.t list) =
+  Lwt_io.printlf "Would %s %d migration(s):" verb (List.length migrations) >>= fun () ->
+  Lwt_list.iter_s (fun (m : Migration.t) ->
+    Lwt_io.printlf "  %Ld  %s" m.Migration.version m.Migration.description) migrations
+  >>= fun () -> Lwt.return 0
+
+let migrate migrations_dir table dry_run verbose database_url =
   announce_dialect verbose database_url >>= fun () ->
   with_initialized_db ~table database_url (fun db ->
     (* Refuse to migrate if an applied migration was modified or went missing. *)
@@ -132,6 +138,7 @@ let migrate migrations_dir table verbose database_url =
         | Ok [] ->
             Lwt_io.printl "No pending migrations" >>= fun () ->
             Lwt.return 0
+        | Ok pending when dry_run -> print_plan "apply" pending
         | Ok pending ->
             run_migrations_with_progress ~verbose ~table db pending >>= fun results ->
             Lwt.return (code_of_results results)
@@ -242,7 +249,7 @@ let reset migrations_dir table verbose database_url =
                     | code -> Lwt.return code
               )
 
-let rollback migrations_dir table step to_version all verbose database_url =
+let rollback migrations_dir table step to_version all dry_run verbose database_url =
   announce_dialect verbose database_url >>= fun () ->
   (* Map the CLI flags to a rollback strategy: --all wins, then --to, else --step (default 1). *)
   let strategy =
@@ -259,9 +266,39 @@ let rollback migrations_dir table step to_version all verbose database_url =
     | Ok [] ->
         Lwt_io.printl "No migrations to rollback" >>= fun () ->
         Lwt.return 0
+    | Ok to_rollback when dry_run ->
+        (* show them in the order they would be rolled back (newest first) *)
+        let ordered = List.sort (fun a b ->
+          Int64.compare b.Migration.version a.Migration.version) to_rollback in
+        print_plan "roll back" ordered
     | Ok to_rollback ->
         rollback_migrations_with_progress ~verbose ~table db to_rollback >>= fun results ->
         Lwt.return (code_of_results results)
+  )
+
+let redo migrations_dir table step verbose database_url =
+  announce_dialect verbose database_url >>= fun () ->
+  let n = Option.value step ~default:1 in
+  with_initialized_db ~table database_url (fun db ->
+    Runner.rollback_targets ~table ~migrations_dir db (Runner.Step n) >>= function
+    | Error err ->
+        Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
+        Lwt.return 1
+    | Ok [] ->
+        Lwt_io.printl "No migrations to redo" >>= fun () ->
+        Lwt.return 0
+    | Ok targets ->
+        rollback_migrations_with_progress ~verbose ~table db targets >>= fun rolled_back ->
+        if List.exists (fun r -> not (Runner.is_success r)) rolled_back then
+          Lwt.return 1
+        else
+          Runner.pending_migrations ~table ~migrations_dir db >>= function
+          | Error err ->
+              Lwt_io.eprintlf "Error: %s" (Types.show_error err) >>= fun () ->
+              Lwt.return 1
+          | Ok pending ->
+              run_migrations_with_progress ~verbose ~table db pending >>= fun results ->
+              Lwt.return (code_of_results results)
   )
 
 let status migrations_dir table database_url =
