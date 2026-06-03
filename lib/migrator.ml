@@ -156,6 +156,23 @@ let rollback (config : config) strategy =
         Lwt.return_ok (make_operation_result results)
   )
 
+let redo ?(step = 1) (config : config) =
+  with_initialized_db ~table:config.table config.database_url (fun _dialect db ->
+    Runner.rollback_targets ~table:config.table ~migrations_dir:config.migrations_dir db (Runner.Step step) >>= function
+    | Error err -> Lwt.return_error err
+    | Ok targets ->
+        rollback_migrations_internal ~verbose:config.verbose ~table:config.table db targets >>= fun rolled_back ->
+        if List.exists (fun r -> not r.success) rolled_back then
+          (* a rollback failed: report it rather than re-applying on a bad state *)
+          Lwt.return_ok (make_operation_result rolled_back)
+        else
+          Runner.pending_migrations ~table:config.table ~migrations_dir:config.migrations_dir db >>= function
+          | Error err -> Lwt.return_error err
+          | Ok pending ->
+              run_migrations_internal ~verbose:config.verbose ~table:config.table db pending >>= fun results ->
+              Lwt.return_ok (make_operation_result results)
+  )
+
 let status (cfg : config) =
   with_initialized_db ~table:cfg.table cfg.database_url (fun dialect db ->
     Runner.get_applied_records ~table:cfg.table dialect db >>= function

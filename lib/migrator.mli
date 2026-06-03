@@ -121,6 +121,11 @@ type rollback_strategy = Runner.rollback_strategy =
 *)
 val rollback : config -> rollback_strategy -> (operation_result, Types.error) Lwt_result.t
 
+(** Roll back the last [step] applied migrations (default 1) and re-apply all
+    pending migrations. Returns the result of the re-apply; if a rollback fails,
+    returns that failing result instead and does not re-apply. *)
+val redo : ?step:int -> config -> (operation_result, Types.error) Lwt_result.t
+
 (** Get current migration status.
 
     Returns information about all migrations (applied and pending) with
