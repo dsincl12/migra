@@ -348,10 +348,38 @@ let test_run_bad_url () =
     (fun exn ->
       Alcotest.fail (Printf.sprintf "run raised instead of returning Error: %s" (Printexc.to_string exn)))
 
+let test_redo () =
+  with_test_db_pooled "migrator_redo" (fun db_url ->
+    with_temp_dir "migrations" (fun migrations_dir ->
+      let v1 = 20240115120000L in
+      let v2 = 20240115130000L in
+      let _f1 = create_migration_with_sections migrations_dir v1 "t1"
+        "CREATE TABLE r1 (id SERIAL PRIMARY KEY);" "DROP TABLE r1;" in
+      let _f2 = create_migration_with_sections migrations_dir v2 "t2"
+        "CREATE TABLE r2 (id SERIAL PRIMARY KEY);" "DROP TABLE r2;" in
+      let config = Migra.Migrator.make ~database_url:db_url ~migrations_dir () in
+      Migra.Migrator.run config >>= function
+      | Error err -> Alcotest.fail (Printf.sprintf "run failed: %s" (Migra.Types.show_error err))
+      | Ok _ ->
+          Migra.Migrator.redo config >>= function
+          | Error err -> Alcotest.fail (Printf.sprintf "redo failed: %s" (Migra.Types.show_error err))
+          | Ok result ->
+              Alcotest.(check int) "re-applied 1 migration" 1 (List.length result.Migra.Migrator.migrations);
+              Alcotest.(check int) "re-apply succeeded" 1 result.success_count;
+              Alcotest.(check int) "no re-apply failures" 0 result.failure_count;
+              Migra.Migrator.status config >>= function
+              | Error err -> Alcotest.fail (Printf.sprintf "status failed: %s" (Migra.Types.show_error err))
+              | Ok st ->
+                  Alcotest.(check int) "2 applied after redo" 2 st.applied_count;
+                  Lwt.return_unit
+    )
+  )
+
 let async_of_sync f () = f (); Lwt.return_unit
 
 let suite = [
   "make_defaults", `Quick, test_make_defaults;
+  "redo", `Quick, test_redo;
   "run_bad_url", `Quick, test_run_bad_url;
   "run_pending", `Quick, test_run_pending;
   "run_no_pending", `Quick, test_run_no_pending;
