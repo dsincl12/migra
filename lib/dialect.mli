@@ -45,14 +45,6 @@ module type DIALECT = sig
   *)
   val timestamp_to_string : string -> string
 
-  (** Optional dialect-specific DDL for schema_migrations table
-      Return None to use standard DDL, or Some sql for custom DDL
-      - PostgreSQL: None (use standard)
-      - MariaDB: Some "... ENGINE=InnoDB"
-      - SQLite: None (use standard)
-  *)
-  val schema_migrations_ddl : string option
-
   (** Whether this dialect supports CREATE/DROP DATABASE
       SQLite is file-based, so it uses file operations instead
   *)

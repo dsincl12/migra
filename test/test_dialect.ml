@@ -97,10 +97,7 @@ let test_sqlite_dialect_sql () =
 
   let timestamp_sql = D.timestamp_to_string "created_at" in
   Alcotest.(check string) "timestamp doesn't need casting"
-    "created_at" timestamp_sql;
-
-  Alcotest.(check (option string)) "schema_migrations_ddl"
-    None D.schema_migrations_ddl
+    "created_at" timestamp_sql
 
 let async_of_sync f () = f (); Lwt.return_unit
 

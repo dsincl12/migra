@@ -12,7 +12,6 @@ module type DIALECT = sig
   val create_database_sql : string -> string
   val drop_database_sql : string -> string
   val timestamp_to_string : string -> string
-  val schema_migrations_ddl : string option
   val supports_database_lifecycle : bool
 end
 
@@ -33,8 +32,6 @@ module PostgreSQL_dialect : DIALECT = struct
 
   let timestamp_to_string col =
     Printf.sprintf "%s::text" col
-
-  let schema_migrations_ddl = None
 end
 
 module MariaDB_dialect : DIALECT = struct
@@ -55,14 +52,6 @@ module MariaDB_dialect : DIALECT = struct
 
   let timestamp_to_string col =
     Printf.sprintf "CAST(%s AS CHAR)" col
-
-  (* MariaDB-specific: use InnoDB engine explicitly *)
-  let schema_migrations_ddl = Some {sql|
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version BIGINT PRIMARY KEY,
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB
-  |sql}
 end
 
 module SQLite_dialect : DIALECT = struct
@@ -77,8 +66,6 @@ module SQLite_dialect : DIALECT = struct
   let drop_database_sql _ = ""
 
   let timestamp_to_string col = col
-
-  let schema_migrations_ddl = None
 end
 
 (** Normalize database URL for Caqti compatibility
