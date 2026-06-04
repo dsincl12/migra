@@ -1,27 +1,58 @@
 ; Shared test helpers
+
 (library
  (name test_helpers)
  (modules test_helpers)
  (libraries migra alcotest lwt lwt.unix caqti caqti-lwt uri)
- (preprocess (pps lwt_ppx)))
+ (preprocess
+  (pps lwt_ppx)))
 
 ; Unit tests - fast, no database required
 ; Run with: dune runtest
+
 (test
  (name test_unit)
- (modules test_unit test_sql_parser test_types test_migration test_discovery test_dialect)
+ (modules
+  test_unit
+  test_sql_parser
+  test_types
+  test_migration
+  test_discovery
+  test_dialect)
  (libraries test_helpers migra alcotest alcotest-lwt lwt lwt.unix)
- (preprocess (pps lwt_ppx)))
+ (preprocess
+  (pps lwt_ppx)))
 
 ; Integration tests - require PostgreSQL, MariaDB, and SQLite
 ; Run with: dune build @runtest-integration
+
 (executable
  (name test_integration)
- (modules test_integration test_database test_runner test_schema_integration test_migrator test_e2e test_integration_sqlite test_integration_mariadb)
- (libraries test_helpers migra alcotest alcotest-lwt lwt lwt.unix caqti caqti-lwt uri)
- (preprocess (pps lwt_ppx)))
+ (modules
+  test_integration
+  test_database
+  test_runner
+  test_schema_integration
+  test_migrator
+  test_e2e
+  test_integration_sqlite
+  test_integration_mariadb)
+ (libraries
+  test_helpers
+  migra
+  alcotest
+  alcotest-lwt
+  lwt
+  lwt.unix
+  caqti
+  caqti-lwt
+  uri)
+ (preprocess
+  (pps lwt_ppx)))
 
 ; Custom alias for running integration tests
+
 (rule
  (alias runtest-integration)
- (action (run %{dep:test_integration.exe})))
+ (action
+  (run %{dep:test_integration.exe})))

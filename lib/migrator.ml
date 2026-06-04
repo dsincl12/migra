@@ -1,4 +1,3 @@
-
 open Lwt.Infix
 
 (* Reference Logging so it is linked in and its load-time logger setup runs.
@@ -13,7 +12,8 @@ type config = {
 }
 
 (** Build a {!config}, defaulting [migrations_dir] to "migrations", [verbose] to
-    false, and [table] to "schema_migrations". Preferred over the record literal. *)
+    false, and [table] to "schema_migrations". Preferred over the record
+    literal. *)
 let make ?(migrations_dir = Discovery.default_migrations_dir) ?(verbose = false)
     ?(table = Runner.default_table) ~database_url () : config =
   { database_url; migrations_dir; verbose; table }
@@ -61,28 +61,31 @@ type rollback_strategy = Runner.rollback_strategy =
     failure, or table setup - is returned as a structured [Error], never raised
     and never stringified. [f]'s own result is propagated unchanged. *)
 let with_initialized_db ~(table : string) database_url
-    (f : Dialect.t -> Types.db_conn -> ('a, Types.error) Lwt_result.t)
-    : ('a, Types.error) Lwt_result.t =
+    (f : Dialect.t -> Types.db_conn -> ('a, Types.error) Lwt_result.t) :
+    ('a, Types.error) Lwt_result.t =
   match Runner.validate_table_name table with
   | Error err -> Lwt.return_error err
-  | Ok () ->
-  match Dialect.detect_from_url database_url with
-  | Error msg -> Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
-  | Ok dialect ->
-      Database.connect_db database_url >>= function
-      | Error err -> Lwt.return_error err
-      | Ok db ->
-          let module Db = (val db : Caqti_lwt.CONNECTION) in
-          Lwt.finalize
-            (fun () ->
-              Runner.ensure_migrations_table ~table dialect db >>= function
-              | Error err ->
-                  Lwt.return_error
-                    (Types.of_caqti_error ~context:"ensure schema_migrations table" err)
-              | Ok () -> f dialect db)
-            (fun () -> Db.disconnect ())
+  | Ok () -> (
+      match Dialect.detect_from_url database_url with
+      | Error msg ->
+          Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
+      | Ok dialect -> (
+          Database.connect_db database_url >>= function
+          | Error err -> Lwt.return_error err
+          | Ok db ->
+              let module Db = (val db : Caqti_lwt.CONNECTION) in
+              Lwt.finalize
+                (fun () ->
+                  Runner.ensure_migrations_table ~table dialect db >>= function
+                  | Error err ->
+                      Lwt.return_error
+                        (Types.of_caqti_error
+                           ~context:"ensure schema_migrations table" err)
+                  | Ok () -> f dialect db)
+                (fun () -> Db.disconnect ())))
 
-let to_migration_result (runner_result : Runner.execution_result) (elapsed : float) : migration_result =
+let to_migration_result (runner_result : Runner.execution_result)
+    (elapsed : float) : migration_result =
   match runner_result with
   | Runner.Success migration ->
       {
@@ -101,7 +104,8 @@ let to_migration_result (runner_result : Runner.execution_result) (elapsed : flo
         elapsed_seconds = Some elapsed;
       }
 
-let timed (op : Migration.t -> Runner.execution_result Lwt.t) (migration : Migration.t) : migration_result Lwt.t =
+let timed (op : Migration.t -> Runner.execution_result Lwt.t)
+    (migration : Migration.t) : migration_result Lwt.t =
   let start_time = Unix.gettimeofday () in
   op migration >>= fun result ->
   Lwt.return (to_migration_result result (Unix.gettimeofday () -. start_time))
@@ -109,20 +113,27 @@ let timed (op : Migration.t -> Runner.execution_result Lwt.t) (migration : Migra
 let run_migration_timed ?(verbose = false) ?(table = Runner.default_table) db =
   timed (Runner.run_migration ~verbose ~table db)
 
-let rollback_migration_timed ?(verbose = false) ?(table = Runner.default_table) db =
+let rollback_migration_timed ?(verbose = false) ?(table = Runner.default_table)
+    db =
   timed (Runner.rollback_migration ~verbose ~table db)
 
-(** Run multiple migrations, stopping on first failure.
-    Same sequential engine as Runner, with the timed result as the step. *)
-let run_migrations_internal ?(verbose = false) ?(table = Runner.default_table) db migrations : migration_result list Lwt.t =
+(** Run multiple migrations, stopping on first failure. Same sequential engine
+    as Runner, with the timed result as the step. *)
+let run_migrations_internal ?(verbose = false) ?(table = Runner.default_table)
+    db migrations : migration_result list Lwt.t =
   Runner.run_until_failure
     ~step:(run_migration_timed ~verbose ~table db)
     ~is_ok:(fun r -> r.success)
     migrations
 
-let rollback_migrations_internal ?(verbose = false) ?(table = Runner.default_table) db migrations : migration_result list Lwt.t =
-  let sorted = List.sort (fun a b ->
-    Int64.compare b.Migration.version a.Migration.version) migrations in
+let rollback_migrations_internal ?(verbose = false)
+    ?(table = Runner.default_table) db migrations : migration_result list Lwt.t
+    =
+  let sorted =
+    List.sort
+      (fun a b -> Int64.compare b.Migration.version a.Migration.version)
+      migrations
+  in
   Runner.run_until_failure
     ~step:(rollback_migration_timed ~verbose ~table db)
     ~is_ok:(fun r -> r.success)
@@ -130,85 +141,119 @@ let rollback_migrations_internal ?(verbose = false) ?(table = Runner.default_tab
 
 let make_operation_result (results : migration_result list) : operation_result =
   let success_count = List.filter (fun r -> r.success) results |> List.length in
-  let failure_count = List.filter (fun r -> not r.success) results |> List.length in
+  let failure_count =
+    List.filter (fun r -> not r.success) results |> List.length
+  in
   { migrations = results; success_count; failure_count }
 
 let run (config : config) =
-  with_initialized_db ~table:config.table config.database_url (fun _dialect db ->
-    (* Refuse to migrate if an already-applied migration was modified or its
+  with_initialized_db ~table:config.table config.database_url
+    (fun _dialect db ->
+      (* Refuse to migrate if an already-applied migration was modified or its
        file went missing. *)
-    Runner.validate ~table:config.table ~migrations_dir:config.migrations_dir db >>= function
-    | Error err -> Lwt.return_error err
-    | Ok () ->
-        Runner.pending_migrations ~table:config.table ~migrations_dir:config.migrations_dir db >>= function
-        | Error err -> Lwt.return_error err
-        | Ok pending ->
-            run_migrations_internal ~verbose:config.verbose ~table:config.table db pending >>= fun results ->
-            Lwt.return_ok (make_operation_result results)
-  )
-
-let rollback (config : config) strategy =
-  with_initialized_db ~table:config.table config.database_url (fun _dialect db ->
-    Runner.rollback_targets ~table:config.table ~migrations_dir:config.migrations_dir db strategy >>= function
-    | Error err -> Lwt.return_error err
-    | Ok to_rollback ->
-        rollback_migrations_internal ~verbose:config.verbose ~table:config.table db to_rollback >>= fun results ->
-        Lwt.return_ok (make_operation_result results)
-  )
-
-let redo ?(step = 1) (config : config) =
-  with_initialized_db ~table:config.table config.database_url (fun _dialect db ->
-    Runner.rollback_targets ~table:config.table ~migrations_dir:config.migrations_dir db (Runner.Step step) >>= function
-    | Error err -> Lwt.return_error err
-    | Ok targets ->
-        rollback_migrations_internal ~verbose:config.verbose ~table:config.table db targets >>= fun rolled_back ->
-        if List.exists (fun r -> not r.success) rolled_back then
-          (* a rollback failed: report it rather than re-applying on a bad state *)
-          Lwt.return_ok (make_operation_result rolled_back)
-        else
-          Runner.pending_migrations ~table:config.table ~migrations_dir:config.migrations_dir db >>= function
+      Runner.validate ~table:config.table ~migrations_dir:config.migrations_dir
+        db
+      >>= function
+      | Error err -> Lwt.return_error err
+      | Ok () -> (
+          Runner.pending_migrations ~table:config.table
+            ~migrations_dir:config.migrations_dir db
+          >>= function
           | Error err -> Lwt.return_error err
           | Ok pending ->
-              run_migrations_internal ~verbose:config.verbose ~table:config.table db pending >>= fun results ->
-              Lwt.return_ok (make_operation_result results)
-  )
+              run_migrations_internal ~verbose:config.verbose
+                ~table:config.table db pending
+              >>= fun results -> Lwt.return_ok (make_operation_result results)))
+
+let rollback (config : config) strategy =
+  with_initialized_db ~table:config.table config.database_url
+    (fun _dialect db ->
+      Runner.rollback_targets ~table:config.table
+        ~migrations_dir:config.migrations_dir db strategy
+      >>= function
+      | Error err -> Lwt.return_error err
+      | Ok to_rollback ->
+          rollback_migrations_internal ~verbose:config.verbose
+            ~table:config.table db to_rollback
+          >>= fun results -> Lwt.return_ok (make_operation_result results))
+
+let redo ?(step = 1) (config : config) =
+  with_initialized_db ~table:config.table config.database_url
+    (fun _dialect db ->
+      Runner.rollback_targets ~table:config.table
+        ~migrations_dir:config.migrations_dir db (Runner.Step step)
+      >>= function
+      | Error err -> Lwt.return_error err
+      | Ok targets -> (
+          rollback_migrations_internal ~verbose:config.verbose
+            ~table:config.table db targets
+          >>= fun rolled_back ->
+          if List.exists (fun r -> not r.success) rolled_back then
+            (* a rollback failed: report it rather than re-applying on a bad state *)
+            Lwt.return_ok (make_operation_result rolled_back)
+          else
+            Runner.pending_migrations ~table:config.table
+              ~migrations_dir:config.migrations_dir db
+            >>= function
+            | Error err -> Lwt.return_error err
+            | Ok pending ->
+                run_migrations_internal ~verbose:config.verbose
+                  ~table:config.table db pending
+                >>= fun results -> Lwt.return_ok (make_operation_result results)
+          ))
 
 let status (cfg : config) =
   with_initialized_db ~table:cfg.table cfg.database_url (fun dialect db ->
-    Runner.get_applied_records ~table:cfg.table dialect db >>= function
-    | Error err ->
-        Lwt.return_error (Types.of_caqti_error ~context:"get applied migrations" err)
-    | Ok applied_records ->
-        let applied_map = List.fold_left
-          (fun acc record -> (record.Runner.version, record.Runner.created_at) :: acc)
-          [] applied_records in
-        let applied_set = Discovery.applied_set_of_list
-          (List.map (fun r -> r.Runner.version) applied_records) in
+      Runner.get_applied_records ~table:cfg.table dialect db >>= function
+      | Error err ->
+          Lwt.return_error
+            (Types.of_caqti_error ~context:"get applied migrations" err)
+      | Ok applied_records -> (
+          let applied_map =
+            List.fold_left
+              (fun acc record ->
+                (record.Runner.version, record.Runner.created_at) :: acc)
+              [] applied_records
+          in
+          let applied_set =
+            Discovery.applied_set_of_list
+              (List.map (fun r -> r.Runner.version) applied_records)
+          in
 
-        match Discovery.find_migrations ~dir:cfg.migrations_dir () with
-        | Error err -> Lwt.return_error err
-        | Ok migrations ->
-            let statuses = List.map (fun m ->
-              let applied = Discovery.Int64Set.mem m.Migration.version applied_set in
-              let applied_at =
-                if applied then
-                  List.assoc_opt m.Migration.version applied_map
-                else
-                  None
+          match Discovery.find_migrations ~dir:cfg.migrations_dir () with
+          | Error err -> Lwt.return_error err
+          | Ok migrations ->
+              let statuses =
+                List.map
+                  (fun m ->
+                    let applied =
+                      Discovery.Int64Set.mem m.Migration.version applied_set
+                    in
+                    let applied_at =
+                      if applied then
+                        List.assoc_opt m.Migration.version applied_map
+                      else None
+                    in
+                    {
+                      version = m.version;
+                      description = m.description;
+                      applied;
+                      applied_at;
+                    })
+                  migrations
               in
-              { version = m.version;
-                description = m.description;
-                applied;
-                applied_at }
-            ) migrations in
 
-            let pending_count = List.filter (fun s -> not s.applied) statuses |> List.length in
-            let applied_count = List.filter (fun s -> s.applied) statuses |> List.length in
+              let pending_count =
+                List.filter (fun s -> not s.applied) statuses |> List.length
+              in
+              let applied_count =
+                List.filter (fun s -> s.applied) statuses |> List.length
+              in
 
-            Lwt.return_ok {
-              database_url = cfg.database_url;
-              migrations = statuses;
-              pending_count;
-              applied_count;
-            }
-  )
+              Lwt.return_ok
+                {
+                  database_url = cfg.database_url;
+                  migrations = statuses;
+                  pending_count;
+                  applied_count;
+                }))

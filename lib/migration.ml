@@ -1,28 +1,21 @@
 (** Migration file representation and parsing. *)
 
-type t = {
-  version : int64;
-  description : string;
-  file_path : string;
-}
+type t = { version : int64; description : string; file_path : string }
 
 let generate_version () : int64 =
   let d = Unix.gettimeofday () in
   let tm = Unix.localtime d in
-  let timestamp_str = Printf.sprintf "%04d%02d%02d%02d%02d%02d"
-    (tm.Unix.tm_year + 1900)
-    (tm.Unix.tm_mon + 1)
-    tm.Unix.tm_mday
-    tm.Unix.tm_hour
-    tm.Unix.tm_min
-    tm.Unix.tm_sec
+  let timestamp_str =
+    Printf.sprintf "%04d%02d%02d%02d%02d%02d" (tm.Unix.tm_year + 1900)
+      (tm.Unix.tm_mon + 1) tm.Unix.tm_mday tm.Unix.tm_hour tm.Unix.tm_min
+      tm.Unix.tm_sec
   in
   Int64.of_string timestamp_str
 
-(** A version stamp is exactly 14 ASCII decimal digits (YYYYMMDDHHMMSS).
-    We validate the digits explicitly: [Int64.of_string] would otherwise accept
-    a leading [-]/[+], [0x]/[0o]/[0b] prefixes, and [_] separators, letting
-    bogus or negative versions slip in. *)
+(** A version stamp is exactly 14 ASCII decimal digits (YYYYMMDDHHMMSS). We
+    validate the digits explicitly: [Int64.of_string] would otherwise accept a
+    leading [-]/[+], [0x]/[0o]/[0b] prefixes, and [_] separators, letting bogus
+    or negative versions slip in. *)
 let is_version_stamp (s : string) : bool =
   String.length s = 14 && String.for_all (fun c -> c >= '0' && c <= '9') s
 
@@ -30,26 +23,27 @@ let has_sql_suffix (rest : string) : bool =
   String.ends_with ~suffix:".sql" (String.lowercase_ascii rest)
 
 let invalid_filename filename =
-  Types.MigrationError (Types.ParseError (Types.InvalidFormat
-    (Printf.sprintf
-      "Invalid migration filename '%s' (expected exactly 14 digits then \
-       '_<description>.sql', e.g. 20240115120000_create_users.sql)" filename)))
+  Types.MigrationError
+    (Types.ParseError
+       (Types.InvalidFormat
+          (Printf.sprintf
+             "Invalid migration filename '%s' (expected exactly 14 digits then \
+              '_<description>.sql', e.g. 20240115120000_create_users.sql)"
+             filename)))
 
-(** Parse version from filename
-    Filename format: YYYYMMDDHHMMSS_description.sql
-    Example: 20240115120000_create_users.sql -> 20240115120000
-*)
+(** Parse version from filename Filename format: YYYYMMDDHHMMSS_description.sql
+    Example: 20240115120000_create_users.sql -> 20240115120000 *)
 let parse_version (filename : string) : (int64, Types.error) result =
   let basename = Filename.basename filename in
   match String.index_opt basename '_' with
   | Some 14 when is_version_stamp (String.sub basename 0 14) ->
-      Ok (Int64.of_string (String.sub basename 0 14))  (* safe: exactly 14 digits *)
+      Ok (Int64.of_string (String.sub basename 0 14))
+      (* safe: exactly 14 digits *)
   | _ -> Error (invalid_filename filename)
 
-(** Parse description from filename
-    Filename format: YYYYMMDDHHMMSS_description.sql
-    Example: 20240115120000_create_users.sql -> create_users
-*)
+(** Parse description from filename Filename format:
+    YYYYMMDDHHMMSS_description.sql Example: 20240115120000_create_users.sql ->
+    create_users *)
 let parse_description (filename : string) : (string, Types.error) result =
   let basename = Filename.basename filename in
   match String.index_opt basename '_' with
@@ -58,22 +52,29 @@ let parse_description (filename : string) : (string, Types.error) result =
       if has_sql_suffix rest then
         let desc = String.sub rest 0 (String.length rest - 4) in
         if String.length desc = 0 then
-          Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
-            (Printf.sprintf "Migration description cannot be empty: '%s'" filename))))
-        else
-          Ok desc
+          Error
+            (Types.MigrationError
+               (Types.ParseError
+                  (Types.InvalidFormat
+                     (Printf.sprintf
+                        "Migration description cannot be empty: '%s'" filename))))
+        else Ok desc
       else
-        Error (Types.MigrationError (Types.ParseError (Types.InvalidFormat
-          (Printf.sprintf "Migration file must have a .sql extension: '%s'" filename))))
+        Error
+          (Types.MigrationError
+             (Types.ParseError
+                (Types.InvalidFormat
+                   (Printf.sprintf
+                      "Migration file must have a .sql extension: '%s'" filename))))
   | _ -> Error (invalid_filename filename)
 
 let from_file (file_path : string) : (t, Types.error) result =
   match parse_version file_path with
   | Error e -> Error e
-  | Ok version ->
+  | Ok version -> (
       match parse_description file_path with
       | Error e -> Error e
-      | Ok description -> Ok { version; description; file_path }
+      | Ok description -> Ok { version; description; file_path })
 
 let read_sql (migration : t) : (string, Types.error) result =
   match
@@ -81,7 +82,8 @@ let read_sql (migration : t) : (string, Types.error) result =
     with e -> Error e
   with
   | Ok content -> Ok content
-  | Error exn -> Error (Types.FileError (Types.ReadError (migration.file_path, exn)))
+  | Error exn ->
+      Error (Types.FileError (Types.ReadError (migration.file_path, exn)))
 
 (** MD5 checksum (hex) of the migration file's full contents, used to detect
     whether a migration file was modified after it was applied. This is
@@ -91,9 +93,8 @@ let checksum (migration : t) : (string, Types.error) result =
   | Error e -> Error e
   | Ok content -> Ok (Digest.to_hex (Digest.string content))
 
-(** Parse a section from migration file content
-    Returns the content between a section marker and the next section or EOF
-*)
+(** Parse a section from migration file content Returns the content between a
+    section marker and the next section or EOF *)
 let parse_section (content : string) (section : string) : string option =
   let lines = String.split_on_char '\n' content in
 
@@ -117,25 +118,31 @@ let parse_section (content : string) (section : string) : string option =
             let line_trimmed = String.trim line in
             if String.starts_with ~prefix:"-- +migrate " line_trimmed then
               List.rev acc
-            else
-              collect_until_next_section (line :: acc) rest
+            else collect_until_next_section (line :: acc) rest
       in
       let section_content = collect_until_next_section [] section_lines in
       let joined = String.concat "\n" section_content in
 
       Some (String.trim joined)
 
-let read_section_sql (migration : t) (section : string) : (string, Types.error) result =
+(** Read a named section's SQL ("up"/"down"), erroring if it is missing or
+    empty. *)
+let read_section_sql (migration : t) (section : string) :
+    (string, Types.error) result =
   match read_sql migration with
   | Error e -> Error e
-  | Ok content ->
+  | Ok content -> (
       match parse_section content section with
-      | None -> Error (Types.MigrationError (Types.MissingSection (migration.file_path, section)))
+      | None ->
+          Error
+            (Types.MigrationError
+               (Types.MissingSection (migration.file_path, section)))
       | Some sql ->
           if String.trim sql = "" then
-            Error (Types.MigrationError (Types.EmptySection (migration.file_path, section)))
-          else
-            Ok sql
+            Error
+              (Types.MigrationError
+                 (Types.EmptySection (migration.file_path, section)))
+          else Ok sql)
 
 let read_up_sql (migration : t) : (string, Types.error) result =
   read_section_sql migration "up"
@@ -146,8 +153,7 @@ let read_down_sql (migration : t) : (string, Types.error) result =
 let make_filename (version : int64) (description : string) : string =
   Printf.sprintf "%Ld_%s.sql" version description
 
-let compare (a : t) (b : t) : int =
-  Int64.compare a.version b.version
+let compare (a : t) (b : t) : int = Int64.compare a.version b.version
 
 let to_string (migration : t) : string =
   Printf.sprintf "[%Ld] %s" migration.version migration.description

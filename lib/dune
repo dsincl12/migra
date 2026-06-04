@@ -2,17 +2,18 @@
  (name migra)
  (public_name migra)
  (libraries
-   lwt
-   lwt.unix
-   caqti
-   caqti-lwt
-   caqti-lwt.unix
-   caqti-dynload
-   uri
-   unix
-   logs
-   logs.lwt
-   logs.fmt
-   fmt
-   fmt.tty)
- (preprocess (pps logs-ppx)))
+  lwt
+  lwt.unix
+  caqti
+  caqti-lwt
+  caqti-lwt.unix
+  caqti-dynload
+  uri
+  unix
+  logs
+  logs.lwt
+  logs.fmt
+  fmt
+  fmt.tty)
+ (preprocess
+  (pps logs-ppx)))

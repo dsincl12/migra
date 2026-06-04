@@ -1,7 +1,7 @@
 (** Shared type definitions *)
 
-(** Database connection type - a first-class Caqti connection module *)
 type db_conn = (module Caqti_lwt.CONNECTION)
+(** Database connection type - a first-class Caqti connection module *)
 
 (** {1 Error Types} *)
 
@@ -26,9 +26,10 @@ type migration_error =
   | EmptySection of string * string
   | ParseError of file_error
   | VersionConflict of int64 * string * string  (** version, file_a, file_b *)
-  | ChecksumMismatch of int64 * string  (** version, file: applied file was modified *)
-  | AppliedFileMissing of int64         (** version recorded as applied but no file *)
-  | OutOfOrder of int64 * int64         (** pending version, latest applied version *)
+  | ChecksumMismatch of int64 * string
+      (** version, file: applied file was modified *)
+  | AppliedFileMissing of int64  (** version recorded as applied but no file *)
+  | OutOfOrder of int64 * int64  (** pending version, latest applied version *)
 
 (** Top-level error type for all Migra operations *)
 type error =
@@ -37,8 +38,8 @@ type error =
   | MigrationError of migration_error
   | DiscoveryError of string
 
-(** Convert a Caqti error to our error type *)
 val of_caqti_error : context:string -> Caqti_error.t -> error
+(** Convert a Caqti error to our error type *)
 
-(** Convert error to human-readable message *)
 val show_error : error -> string
+(** Convert error to human-readable message *)

@@ -1,4 +1,3 @@
-
 type db_conn = (module Caqti_lwt.CONNECTION)
 
 type file_error =
@@ -15,13 +14,14 @@ type db_error =
   | ValidationError of string
 
 type migration_error =
-  | MissingSection of string * string  (* file, section *)
+  | MissingSection of string * string (* file, section *)
   | EmptySection of string * string
   | ParseError of file_error
-  | VersionConflict of int64 * string * string  (* version, file_a, file_b *)
-  | ChecksumMismatch of int64 * string  (* version, file: applied file was modified *)
-  | AppliedFileMissing of int64         (* version recorded as applied but no file *)
-  | OutOfOrder of int64 * int64         (* pending version, latest applied version *)
+  | VersionConflict of int64 * string * string (* version, file_a, file_b *)
+  | ChecksumMismatch of
+      int64 * string (* version, file: applied file was modified *)
+  | AppliedFileMissing of int64 (* version recorded as applied but no file *)
+  | OutOfOrder of int64 * int64 (* pending version, latest applied version *)
 
 type error =
   | FileError of file_error
@@ -53,8 +53,7 @@ and show_db_error = function
   | TransactionFailed (context, err) ->
       Printf.sprintf "Transaction failed (%s): %s" context
         (Caqti_error.show err)
-  | DatabaseNotFound name ->
-      Printf.sprintf "Database not found: %s" name
+  | DatabaseNotFound name -> Printf.sprintf "Database not found: %s" name
   | UrlParseError msg -> Printf.sprintf "URL parse error: %s" msg
   | ValidationError msg -> Printf.sprintf "Validation error: %s" msg
 
@@ -65,12 +64,14 @@ and show_migration_error = function
       Printf.sprintf "Empty %s section in file: %s" section file
   | ParseError err -> show_file_error err
   | VersionConflict (version, file_a, file_b) ->
-      Printf.sprintf "Migration version %Ld is duplicated by two files: %s and %s"
-        version file_a file_b
+      Printf.sprintf
+        "Migration version %Ld is duplicated by two files: %s and %s" version
+        file_a file_b
   | ChecksumMismatch (version, file) ->
       Printf.sprintf
-        "Migration %Ld (%s) was modified after it was applied (checksum mismatch). \
-         Revert the file to its applied state, or roll the migration back and re-apply it."
+        "Migration %Ld (%s) was modified after it was applied (checksum \
+         mismatch). Revert the file to its applied state, or roll the \
+         migration back and re-apply it."
         version file
   | AppliedFileMissing version ->
       Printf.sprintf

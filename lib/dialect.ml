@@ -1,8 +1,4 @@
-
-type t =
-  | PostgreSQL
-  | MariaDB
-  | SQLite
+type t = PostgreSQL | MariaDB | SQLite
 
 module type DIALECT = sig
   val name : string
@@ -24,14 +20,12 @@ module PostgreSQL_dialect : DIALECT = struct
   let database_exists_sql =
     "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)"
 
-  let create_database_sql db_name =
-    Printf.sprintf "CREATE DATABASE %s" db_name
+  let create_database_sql db_name = Printf.sprintf "CREATE DATABASE %s" db_name
 
   let drop_database_sql db_name =
     Printf.sprintf "DROP DATABASE IF EXISTS %s" db_name
 
-  let timestamp_to_string col =
-    Printf.sprintf "%s::text" col
+  let timestamp_to_string col = Printf.sprintf "%s::text" col
 end
 
 module MariaDB_dialect : DIALECT = struct
@@ -41,7 +35,8 @@ module MariaDB_dialect : DIALECT = struct
   let supports_database_lifecycle = true
 
   let database_exists_sql =
-    "SELECT EXISTS(SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?)"
+    "SELECT EXISTS(SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME \
+     = ?)"
 
   let create_database_sql db_name =
     (* Use backticks for identifier quoting, IF NOT EXISTS for idempotency *)
@@ -50,8 +45,7 @@ module MariaDB_dialect : DIALECT = struct
   let drop_database_sql db_name =
     Printf.sprintf "DROP DATABASE IF EXISTS `%s`" db_name
 
-  let timestamp_to_string col =
-    Printf.sprintf "CAST(%s AS CHAR)" col
+  let timestamp_to_string col = Printf.sprintf "CAST(%s AS CHAR)" col
 end
 
 module SQLite_dialect : DIALECT = struct
@@ -64,22 +58,20 @@ module SQLite_dialect : DIALECT = struct
   let database_exists_sql = ""
   let create_database_sql _ = ""
   let drop_database_sql _ = ""
-
   let timestamp_to_string col = col
 end
 
 (** Normalize database URL for Caqti compatibility
 
-    SQLite: caqti-driver-sqlite3 expects sqlite3:path (single colon), not sqlite3://path
-    We accept both formats for user convenience but normalize to what Caqti expects.
-*)
+    SQLite: caqti-driver-sqlite3 expects sqlite3:path (single colon), not
+    sqlite3://path We accept both formats for user convenience but normalize to
+    what Caqti expects. *)
 let normalize_url (url : string) : string =
   let prefix = "sqlite3://" in
   if String.starts_with ~prefix url then
     let n = String.length prefix in
     "sqlite3:" ^ String.sub url n (String.length url - n)
-  else
-    url
+  else url
 
 let detect_from_url (url : string) : (t, string) result =
   if String.starts_with ~prefix:"postgresql://" url then Ok PostgreSQL
@@ -96,21 +88,19 @@ let detect_from_url (url : string) : (t, string) result =
       | Some idx -> String.sub url 0 (min (idx + 3) (String.length url))
       | None -> url
     in
-    Error (Printf.sprintf
-      "Unsupported database URL scheme: '%s'\n\
-       \n\
-       Supported databases:\n\
-       - PostgreSQL: postgresql:// or postgres://\n\
-       - MariaDB/MySQL: mariadb:// or mysql://\n\
-       - SQLite: sqlite3:// or sqlite3:\n\
-       \n\
-       Examples:\n\
-       - postgresql://user@localhost:5432/mydb\n\
-       - mariadb://root@localhost:3306/mydb\n\
-       - sqlite3://./dev.db (normalized to sqlite3:./dev.db)\n\
-       - sqlite3::memory: (in-memory database)\n\
-       \n"
-      scheme)
+    Error
+      (Printf.sprintf
+         "Unsupported database URL scheme: '%s'\n\n\
+          Supported databases:\n\
+          - PostgreSQL: postgresql:// or postgres://\n\
+          - MariaDB/MySQL: mariadb:// or mysql://\n\
+          - SQLite: sqlite3:// or sqlite3:\n\n\
+          Examples:\n\
+          - postgresql://user@localhost:5432/mydb\n\
+          - mariadb://root@localhost:3306/mydb\n\
+          - sqlite3://./dev.db (normalized to sqlite3:./dev.db)\n\
+          - sqlite3::memory: (in-memory database)\n\n"
+         scheme)
 
 let get_dialect (db_type : t) : (module DIALECT) =
   match db_type with
