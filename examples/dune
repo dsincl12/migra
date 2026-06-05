@@ -1,0 +1,5 @@
+; Example programs (built with the rest of the project, so they stay compiling).
+
+(executable
+ (name migrate_on_startup)
+ (libraries migra lwt lwt.unix))
