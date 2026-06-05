@@ -1,0 +1,19 @@
+(library
+ (name migra_engine)
+ (public_name migra.engine)
+ (libraries
+  lwt
+  lwt.unix
+  caqti
+  caqti-lwt
+  caqti-lwt.unix
+  caqti-dynload
+  uri
+  unix
+  logs
+  logs.lwt
+  logs.fmt
+  fmt
+  fmt.tty)
+ (preprocess
+  (pps logs-ppx)))

@@ -1,34 +1,22 @@
-(** Migration execution and inspection API.
-
-    This module provides a minimal interface for running database migrations
-    programmatically. It focuses on migration execution and status inspection.
-
-    {b Scope:}
-    - Run pending migrations
-    - Rollback applied migrations
-    - Inspect migration status
-
-    {b Not included:}
-    - Database lifecycle (create/drop databases) - use CLI commands
-    - Migration file generation - use CLI commands
+(** The public migration API: run, roll back, redo, inspect, and generate
+    migrations. This is the high-level entry point; database lifecycle helpers
+    live in {!Migra.Database}, and the implementation in the internal
+    [migra.engine] library.
 
     {b Example usage:}
 
     {[
     let config =
-      Migrator.
-        {
-          database_url = "postgresql://localhost/myapp";
-          migrations_dir = "db/migrations";
-          verbose = false;
-        }
+      Migrator.make ~database_url:"postgresql://localhost/myapp" ()
     in
-
     Lwt_main.run (Migrator.run config) |> function
+    | Ok result when Migrator.succeeded result ->
+        Printf.printf "Applied %d migration(s)\n" result.success_count
     | Ok result ->
-        Printf.printf "Ran %d migrations successfully\n" result.success_count
-    | Error msg ->
-        Printf.eprintf "Migration failed: %s\n" msg;
+        Printf.eprintf "%d migration(s) failed\n" result.failure_count;
+        exit 1
+    | Error e ->
+        Printf.eprintf "Could not migrate: %s\n" (Types.show_error e);
         exit 1
     ]} *)
 
@@ -52,6 +40,9 @@ val make :
 (** Build a {!config}. [migrations_dir] defaults to ["migrations"], [verbose] to
     [false], and [table] to ["schema_migrations"]. Preferred over the record
     literal: {[ Migrator.make ~database_url () ]} *)
+
+val default_table : string
+(** The default migrations-tracking table name ("schema_migrations"). *)
 
 (** {1 Results} *)
 
@@ -92,9 +83,20 @@ type status_result = {
 }
 (** Database migration status *)
 
+(** Progress events emitted by {!run}/{!rollback}/{!redo} via [?on_event]. *)
+type event =
+  | Applying of int64 * string  (** version, description: about to apply *)
+  | Applied of migration_result  (** finished applying *)
+  | Rolling_back of int64 * string
+      (** version, description: about to roll back *)
+  | Rolled_back of migration_result  (** finished rolling back *)
+
 (** {1 Core Operations} *)
 
-val run : config -> (operation_result, Types.error) Lwt_result.t
+val run :
+  ?on_event:(event -> unit Lwt.t) ->
+  config ->
+  (operation_result, Types.error) Lwt_result.t
 (** Run all pending migrations.
 
     Discovers migrations in the configured directory, identifies which ones
@@ -109,14 +111,17 @@ val run : config -> (operation_result, Types.error) Lwt_result.t
     @param config Migration configuration
     @return Operation result with per-migration outcomes *)
 
-(** Rollback strategy (an alias of {!Runner.rollback_strategy}) *)
-type rollback_strategy = Runner.rollback_strategy =
+(** Rollback strategy (an alias of {!Migra_engine.Runner.rollback_strategy}) *)
+type rollback_strategy = Migra_engine.Runner.rollback_strategy =
   | Step of int  (** Rollback last N migrations *)
   | To of int64  (** Rollback to specific version (exclusive) *)
   | All  (** Rollback all migrations *)
 
 val rollback :
-  config -> rollback_strategy -> (operation_result, Types.error) Lwt_result.t
+  ?on_event:(event -> unit Lwt.t) ->
+  config ->
+  rollback_strategy ->
+  (operation_result, Types.error) Lwt_result.t
 (** Rollback migrations according to strategy.
 
     Executes down SQL for selected migrations in reverse chronological order.
@@ -128,7 +133,11 @@ val rollback :
     @param strategy Rollback strategy
     @return Operation result with per-migration outcomes *)
 
-val redo : ?step:int -> config -> (operation_result, Types.error) Lwt_result.t
+val redo :
+  ?on_event:(event -> unit Lwt.t) ->
+  ?step:int ->
+  config ->
+  (operation_result, Types.error) Lwt_result.t
 (** Roll back the last [step] applied migrations (default 1) and re-apply all
     pending migrations. Returns the result of the re-apply; if a rollback fails,
     returns that failing result instead and does not re-apply. *)
@@ -141,3 +150,19 @@ val status : config -> (status_result, Types.error) Lwt_result.t
 
     @param config Migration configuration
     @return Status result with all migrations *)
+
+val generate : ?migrations_dir:string -> string -> (string, Types.error) result
+(** Create a new timestamped migration file [<version>_<name>.sql] in
+    [migrations_dir] (created if absent) and return its path. Fails with
+    [AlreadyExists] if such a file already exists. *)
+
+(** {1 Plans (for previewing / dry runs)} *)
+
+val pending_plan : config -> ((int64 * string) list, Types.error) Lwt_result.t
+(** The (version, description) of each migration {!run} would apply. *)
+
+val rollback_plan :
+  config ->
+  rollback_strategy ->
+  ((int64 * string) list, Types.error) Lwt_result.t
+(** The (version, description) of each migration {!rollback} would undo. *)

@@ -2,12 +2,13 @@ open Lwt.Infix
 open Test_helpers
 
 let with_initialized_db db_url f =
-  Migra.Database.connect_db db_url >>= function
+  Migra_engine.Database.connect_db db_url >>= function
   | Error msg ->
       Lwt.fail_with
         (Printf.sprintf "Failed to connect: %s" (Migra.Types.show_error msg))
   | Ok db -> (
-      Migra.Runner.ensure_migrations_table Migra.Dialect.PostgreSQL db
+      Migra_engine.Runner.ensure_migrations_table
+        Migra_engine.Dialect.PostgreSQL db
       >>= function
       | Error err ->
           Lwt.fail_with
@@ -33,7 +34,7 @@ let test_fresh_setup_workflow () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
@@ -45,10 +46,10 @@ let test_fresh_setup_workflow () =
                     (fun result ->
                       Alcotest.(check bool)
                         "migration succeeded" true
-                        (Migra.Runner.is_success result))
+                        (Migra_engine.Runner.is_success result))
                     results;
 
-                  Migra.Runner.get_applied_versions db >>= function
+                  Migra_engine.Runner.get_applied_versions db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_applied_versions failed: %s"
@@ -103,7 +104,7 @@ let test_incremental_migrations () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "First run_pending failed: %s"
@@ -119,7 +120,7 @@ let test_incremental_migrations () =
                       "DROP TABLE table3;"
                   in
 
-                  Migra.Runner.run_pending db migrations_dir >>= function
+                  Migra_engine.Runner.run_pending db migrations_dir >>= function
                   | Error msg ->
                       Alcotest.fail
                         (Printf.sprintf "Second run_pending failed: %s"
@@ -129,10 +130,11 @@ let test_incremental_migrations () =
                         "1 migration in second batch" 1 (List.length results2);
                       Alcotest.(check int64_testable)
                         "v3 was executed" v3
-                        (Migra.Runner.migration_of_result (List.hd results2))
-                          .Migra.Migration.version;
+                        (Migra_engine.Runner.migration_of_result
+                           (List.hd results2))
+                          .Migra_engine.Migration.version;
 
-                      Migra.Runner.get_applied_versions db >>= function
+                      Migra_engine.Runner.get_applied_versions db >>= function
                       | Error err ->
                           Alcotest.fail
                             (Printf.sprintf "get_applied_versions failed: %s"
@@ -164,13 +166,14 @@ let test_rollback_workflow () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
                        (Migra.Types.show_error msg))
               | Ok _ -> (
-                  Migra.Runner.rollback_step ~migrations_dir db 1 >>= function
+                  Migra_engine.Runner.rollback_step ~migrations_dir db 1
+                  >>= function
                   | Error msg ->
                       Alcotest.fail
                         (Printf.sprintf "rollback_step failed: %s"
@@ -180,7 +183,7 @@ let test_rollback_workflow () =
                         "1 migration rolled back" 1
                         (List.length rollback_results);
 
-                      Migra.Runner.get_applied_versions db >>= function
+                      Migra_engine.Runner.get_applied_versions db >>= function
                       | Error err ->
                           Alcotest.fail
                             (Printf.sprintf "get_applied_versions failed: %s"
@@ -248,13 +251,14 @@ let test_rollback_to_workflow () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
                        (Migra.Types.show_error msg))
               | Ok _ -> (
-                  Migra.Runner.rollback_to ~migrations_dir db v2 >>= function
+                  Migra_engine.Runner.rollback_to ~migrations_dir db v2
+                  >>= function
                   | Error msg ->
                       Alcotest.fail
                         (Printf.sprintf "rollback_to failed: %s"
@@ -264,7 +268,7 @@ let test_rollback_to_workflow () =
                         "2 migrations rolled back" 2
                         (List.length rollback_results);
 
-                      Migra.Runner.get_applied_versions db >>= function
+                      Migra_engine.Runner.get_applied_versions db >>= function
                       | Error err ->
                           Alcotest.fail
                             (Printf.sprintf "get_applied_versions failed: %s"
@@ -294,13 +298,14 @@ let test_reset_workflow () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "Initial run_pending failed: %s"
                        (Migra.Types.show_error msg))
               | Ok _ -> (
-                  Migra.Runner.rollback_all ~migrations_dir db >>= function
+                  Migra_engine.Runner.rollback_all ~migrations_dir db
+                  >>= function
                   | Error msg ->
                       Alcotest.fail
                         (Printf.sprintf "rollback_all failed: %s"
@@ -310,7 +315,7 @@ let test_reset_workflow () =
                         "2 migrations rolled back" 2
                         (List.length rollback_results);
 
-                      Migra.Runner.get_applied_versions db >>= function
+                      Migra_engine.Runner.get_applied_versions db >>= function
                       | Error err ->
                           Alcotest.fail
                             (Printf.sprintf "get_applied_versions failed: %s"
@@ -319,7 +324,7 @@ let test_reset_workflow () =
                           Alcotest.(check int)
                             "no versions remain" 0 (List.length versions);
 
-                          Migra.Runner.run_pending db migrations_dir
+                          Migra_engine.Runner.run_pending db migrations_dir
                           >>= function
                           | Error msg ->
                               Alcotest.fail
@@ -329,7 +334,8 @@ let test_reset_workflow () =
                               Alcotest.(check int)
                                 "2 migrations reapplied" 2 (List.length results);
 
-                              Migra.Runner.get_applied_versions db >>= function
+                              Migra_engine.Runner.get_applied_versions db
+                              >>= function
                               | Error err ->
                                   Alcotest.fail
                                     (Printf.sprintf
@@ -364,7 +370,7 @@ let test_failure_recovery () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed unexpectedly: %s"
@@ -374,12 +380,12 @@ let test_failure_recovery () =
                     "2 results (v1 success, v2 failure)" 2 (List.length results);
                   Alcotest.(check bool)
                     "v1 succeeded" true
-                    (Migra.Runner.is_success (List.nth results 0));
+                    (Migra_engine.Runner.is_success (List.nth results 0));
                   Alcotest.(check bool)
                     "v2 failed" false
-                    (Migra.Runner.is_success (List.nth results 1));
+                    (Migra_engine.Runner.is_success (List.nth results 1));
 
-                  Migra.Runner.get_applied_versions db >>= function
+                  Migra_engine.Runner.get_applied_versions db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_applied_versions failed: %s"
@@ -392,7 +398,8 @@ let test_failure_recovery () =
 
                       let f2_path =
                         Filename.concat migrations_dir
-                          (Migra.Migration.make_filename v2 "bad_migration")
+                          (Migra_engine.Migration.make_filename v2
+                             "bad_migration")
                       in
                       let oc = open_out f2_path in
                       output_string oc
@@ -402,7 +409,8 @@ let test_failure_recovery () =
                          DROP TABLE table2;\n";
                       close_out oc;
 
-                      Migra.Runner.run_pending db migrations_dir >>= function
+                      Migra_engine.Runner.run_pending db migrations_dir
+                      >>= function
                       | Error msg ->
                           Alcotest.fail
                             (Printf.sprintf "Second run_pending failed: %s"
@@ -414,10 +422,11 @@ let test_failure_recovery () =
                             (fun result ->
                               Alcotest.(check bool)
                                 "migration succeeded" true
-                                (Migra.Runner.is_success result))
+                                (Migra_engine.Runner.is_success result))
                             results2;
 
-                          Migra.Runner.get_applied_versions db >>= function
+                          Migra_engine.Runner.get_applied_versions db
+                          >>= function
                           | Error err ->
                               Alcotest.fail
                                 (Printf.sprintf
@@ -441,25 +450,26 @@ let test_database_lifecycle () =
     Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
   in
 
-  Migra.Database.create_database db_url >>= function
+  Migra_engine.Database.create_database db_url >>= function
   | Error msg ->
       Alcotest.fail
         (Printf.sprintf "create_database failed: %s"
            (Migra.Types.show_error msg))
   | Ok () -> (
-      Migra.Database.drop_database db_url >>= function
+      Migra_engine.Database.drop_database db_url >>= function
       | Error msg ->
           Alcotest.fail
             (Printf.sprintf "drop_database failed: %s"
                (Migra.Types.show_error msg))
       | Ok () -> (
-          Migra.Database.create_database db_url >>= function
+          Migra_engine.Database.create_database db_url >>= function
           | Error msg ->
               Alcotest.fail
                 (Printf.sprintf "Second create_database failed: %s"
                    (Migra.Types.show_error msg))
           | Ok () ->
-              Migra.Database.drop_database db_url >>= fun _ -> Lwt.return_unit))
+              Migra_engine.Database.drop_database db_url >>= fun _ ->
+              Lwt.return_unit))
 
 (** E2E: a migration whose up SQL contains a dollar-quoted function body (with
     interior semicolons and a '$') runs correctly through the splitter and the
@@ -481,7 +491,7 @@ let test_postgres_function_migration () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
@@ -491,7 +501,7 @@ let test_postgres_function_migration () =
                     "1 migration executed" 1 (List.length results);
                   Alcotest.(check bool)
                     "migration succeeded" true
-                    (List.for_all Migra.Runner.is_success results);
+                    (List.for_all Migra_engine.Runner.is_success results);
 
                   let module Db = (val db : Caqti_lwt.CONNECTION) in
                   let open Caqti_request.Infix in
@@ -528,19 +538,19 @@ let test_checksum_validation () =
               "CREATE TABLE cks (id int);" "DROP TABLE cks;"
           in
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
                        (Migra.Types.show_error msg))
               | Ok _ -> (
-                  Migra.Runner.get_applied_checksums db >>= fun cks ->
+                  Migra_engine.Runner.get_applied_checksums db >>= fun cks ->
                   (match cks with
                   | Ok [ (v, Some _) ] when Int64.equal v v1 -> ()
                   | _ ->
                       Alcotest.fail
                         "expected one applied migration with a checksum");
-                  Migra.Runner.validate ~migrations_dir db >>= fun ok ->
+                  Migra_engine.Runner.validate ~migrations_dir db >>= fun ok ->
                   Alcotest.(check bool)
                     "validate ok when unchanged" true (Result.is_ok ok);
                   let oc = open_out f1 in
@@ -550,7 +560,7 @@ let test_checksum_validation () =
                      -- +migrate down\n\
                      DROP TABLE cks;\n";
                   close_out oc;
-                  Migra.Runner.validate ~migrations_dir db >>= fun bad ->
+                  Migra_engine.Runner.validate ~migrations_dir db >>= fun bad ->
                   match bad with
                   | Error
                       (Migra.Types.MigrationError
@@ -568,14 +578,14 @@ let test_missing_file_detection () =
               "CREATE TABLE mf (id int);" "DROP TABLE mf;"
           in
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
                        (Migra.Types.show_error msg))
               | Ok _ -> (
                   Sys.remove f1;
-                  Migra.Runner.validate ~migrations_dir db >>= fun r ->
+                  Migra_engine.Runner.validate ~migrations_dir db >>= fun r ->
                   match r with
                   | Error
                       (Migra.Types.MigrationError
@@ -592,7 +602,7 @@ let test_out_of_order_detection () =
               "newer" "CREATE TABLE ooo (id int);" "DROP TABLE ooo;"
           in
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error msg ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
@@ -603,7 +613,7 @@ let test_out_of_order_detection () =
                       20240115120000L "older" "CREATE TABLE ooo2 (id int);"
                       "DROP TABLE ooo2;"
                   in
-                  Migra.Runner.pending_migrations ~migrations_dir db
+                  Migra_engine.Runner.pending_migrations ~migrations_dir db
                   >>= fun r ->
                   match r with
                   | Error
@@ -620,23 +630,25 @@ let test_custom_table () =
             create_migration_with_sections migrations_dir v1 "t"
               "CREATE TABLE ctbl (id int);" "DROP TABLE ctbl;"
           in
-          Migra.Database.connect_db db_url >>= function
+          Migra_engine.Database.connect_db db_url >>= function
           | Error e -> Lwt.fail_with (Migra.Types.show_error e)
           | Ok db -> (
-              Migra.Runner.ensure_migrations_table ~table
-                Migra.Dialect.PostgreSQL db
+              Migra_engine.Runner.ensure_migrations_table ~table
+                Migra_engine.Dialect.PostgreSQL db
               >>= function
               | Error e ->
                   Alcotest.fail
                     (Printf.sprintf "ensure failed: %s" (Caqti_error.show e))
               | Ok () -> (
-                  Migra.Runner.run_pending ~table db migrations_dir >>= function
+                  Migra_engine.Runner.run_pending ~table db migrations_dir
+                  >>= function
                   | Error msg ->
                       Alcotest.fail
                         (Printf.sprintf "run_pending failed: %s"
                            (Migra.Types.show_error msg))
                   | Ok _ -> (
-                      Migra.Runner.get_applied_versions ~table db >>= fun r ->
+                      Migra_engine.Runner.get_applied_versions ~table db
+                      >>= fun r ->
                       match r with
                       | Ok [ v ] when Int64.equal v v1 -> Lwt.return_unit
                       | _ ->

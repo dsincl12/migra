@@ -1,8 +1,12 @@
 open Lwt.Infix
+module Runner = Migra_engine.Runner
+module Discovery = Migra_engine.Discovery
+module Dialect = Migra_engine.Dialect
+module Migration = Migra_engine.Migration
 
 (* Reference Logging so it is linked in and its load-time logger setup runs.
    setup is idempotent (it no-ops if a reporter is already installed). *)
-let () = Logging.setup ()
+let () = Migra_engine.Logging.setup ()
 
 type config = {
   database_url : string;
@@ -10,6 +14,8 @@ type config = {
   verbose : bool;
   table : string;
 }
+
+let default_table = Runner.default_table
 
 (** Build a {!config}, defaulting [migrations_dir] to "migrations", [verbose] to
     false, and [table] to "schema_migrations". Preferred over the record
@@ -33,6 +39,16 @@ type operation_result = {
 }
 
 let succeeded (r : operation_result) : bool = r.failure_count = 0
+
+(** Progress events emitted by {!run}/{!rollback}/{!redo} via [?on_event],
+    letting a caller (e.g. a CLI) report progress as each migration runs. *)
+type event =
+  | Applying of int64 * string
+  | Applied of migration_result
+  | Rolling_back of int64 * string
+  | Rolled_back of migration_result
+
+let no_event (_ : event) = Lwt.return_unit
 
 type migration_status = {
   version : int64;
@@ -70,7 +86,7 @@ let with_initialized_db ~(table : string) database_url
       | Error msg ->
           Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
       | Ok dialect -> (
-          Database.connect_db database_url >>= function
+          Migra_engine.Database.connect_db database_url >>= function
           | Error err -> Lwt.return_error err
           | Ok db ->
               let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -120,22 +136,30 @@ let rollback_migration_timed ?(verbose = false) ?(table = Runner.default_table)
 (** Run multiple migrations, stopping on first failure. Same sequential engine
     as Runner, with the timed result as the step. *)
 let run_migrations_internal ?(verbose = false) ?(table = Runner.default_table)
-    db migrations : migration_result list Lwt.t =
+    ?(on_event = no_event) db migrations : migration_result list Lwt.t =
   Runner.run_until_failure
-    ~step:(run_migration_timed ~verbose ~table db)
+    ~step:(fun m ->
+      on_event (Applying (m.Migration.version, m.Migration.description))
+      >>= fun () ->
+      run_migration_timed ~verbose ~table db m >>= fun result ->
+      on_event (Applied result) >>= fun () -> Lwt.return result)
     ~is_ok:(fun r -> r.success)
     migrations
 
 let rollback_migrations_internal ?(verbose = false)
-    ?(table = Runner.default_table) db migrations : migration_result list Lwt.t
-    =
+    ?(table = Runner.default_table) ?(on_event = no_event) db migrations :
+    migration_result list Lwt.t =
   let sorted =
     List.sort
       (fun a b -> Int64.compare b.Migration.version a.Migration.version)
       migrations
   in
   Runner.run_until_failure
-    ~step:(rollback_migration_timed ~verbose ~table db)
+    ~step:(fun m ->
+      on_event (Rolling_back (m.Migration.version, m.Migration.description))
+      >>= fun () ->
+      rollback_migration_timed ~verbose ~table db m >>= fun result ->
+      on_event (Rolled_back result) >>= fun () -> Lwt.return result)
     ~is_ok:(fun r -> r.success)
     sorted
 
@@ -146,7 +170,7 @@ let make_operation_result (results : migration_result list) : operation_result =
   in
   { migrations = results; success_count; failure_count }
 
-let run (config : config) =
+let run ?(on_event = no_event) (config : config) =
   with_initialized_db ~table:config.table config.database_url
     (fun _dialect db ->
       (* Refuse to migrate if an already-applied migration was modified or its
@@ -162,10 +186,10 @@ let run (config : config) =
           | Error err -> Lwt.return_error err
           | Ok pending ->
               run_migrations_internal ~verbose:config.verbose
-                ~table:config.table db pending
+                ~table:config.table ~on_event db pending
               >>= fun results -> Lwt.return_ok (make_operation_result results)))
 
-let rollback (config : config) strategy =
+let rollback ?(on_event = no_event) (config : config) strategy =
   with_initialized_db ~table:config.table config.database_url
     (fun _dialect db ->
       Runner.rollback_targets ~table:config.table
@@ -174,10 +198,10 @@ let rollback (config : config) strategy =
       | Error err -> Lwt.return_error err
       | Ok to_rollback ->
           rollback_migrations_internal ~verbose:config.verbose
-            ~table:config.table db to_rollback
+            ~table:config.table ~on_event db to_rollback
           >>= fun results -> Lwt.return_ok (make_operation_result results))
 
-let redo ?(step = 1) (config : config) =
+let redo ?(on_event = no_event) ?(step = 1) (config : config) =
   with_initialized_db ~table:config.table config.database_url
     (fun _dialect db ->
       Runner.rollback_targets ~table:config.table
@@ -186,7 +210,7 @@ let redo ?(step = 1) (config : config) =
       | Error err -> Lwt.return_error err
       | Ok targets -> (
           rollback_migrations_internal ~verbose:config.verbose
-            ~table:config.table db targets
+            ~table:config.table ~on_event db targets
           >>= fun rolled_back ->
           if List.exists (fun r -> not r.success) rolled_back then
             (* a rollback failed: report it rather than re-applying on a bad state *)
@@ -198,7 +222,7 @@ let redo ?(step = 1) (config : config) =
             | Error err -> Lwt.return_error err
             | Ok pending ->
                 run_migrations_internal ~verbose:config.verbose
-                  ~table:config.table db pending
+                  ~table:config.table ~on_event db pending
                 >>= fun results -> Lwt.return_ok (make_operation_result results)
           ))
 
@@ -257,3 +281,42 @@ let status (cfg : config) =
                   pending_count;
                   applied_count;
                 }))
+
+(* version + description of each migration in a list, for dry-run plans *)
+let to_plan ms =
+  List.map (fun m -> (m.Migration.version, m.Migration.description)) ms
+
+let pending_plan (config : config) =
+  with_initialized_db ~table:config.table config.database_url
+    (fun _dialect db ->
+      Runner.pending_migrations ~table:config.table
+        ~migrations_dir:config.migrations_dir db
+      >|= Result.map to_plan)
+
+let rollback_plan (config : config) strategy =
+  with_initialized_db ~table:config.table config.database_url
+    (fun _dialect db ->
+      Runner.rollback_targets ~table:config.table
+        ~migrations_dir:config.migrations_dir db strategy
+      >|= Result.map to_plan)
+
+let migration_template = "-- +migrate up\n\n\n-- +migrate down\n\n"
+
+let generate ?(migrations_dir = Discovery.default_migrations_dir)
+    (name : string) : (string, Types.error) result =
+  match Discovery.ensure_migrations_dir ~dir:migrations_dir () with
+  | Error err -> Error err
+  | Ok () -> (
+      let filename =
+        Migration.make_filename (Migration.generate_version ()) name
+      in
+      let filepath = Filename.concat migrations_dir filename in
+      if Sys.file_exists filepath then
+        Error (Types.FileError (Types.AlreadyExists filepath))
+      else
+        try
+          let oc = open_out filepath in
+          output_string oc migration_template;
+          close_out oc;
+          Ok filepath
+        with e -> Error (Types.FileError (Types.ReadError (filepath, e))))

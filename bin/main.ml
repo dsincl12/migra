@@ -67,7 +67,7 @@ let generate_cmd =
 let table_arg =
   Arg.(
     value
-    & opt string Migra.Runner.default_table
+    & opt string Migra.Migrator.default_table
     & info [ "t"; "table" ] ~docv:"NAME"
         ~doc:
           "Name of the migrations-tracking table (default: schema_migrations)")

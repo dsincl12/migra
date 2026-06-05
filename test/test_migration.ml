@@ -1,7 +1,7 @@
 open Test_helpers
 
 let test_generate_version () =
-  let version = Migra.Migration.generate_version () in
+  let version = Migra_engine.Migration.generate_version () in
   let version_str = Int64.to_string version in
 
   Alcotest.(check int) "version is 14 digits" 14 (String.length version_str);
@@ -17,14 +17,15 @@ let test_generate_version () =
 
 let test_parse_version_valid () =
   let result =
-    Migra.Migration.parse_version "20240115120000_create_users.sql"
+    Migra_engine.Migration.parse_version "20240115120000_create_users.sql"
   in
   Alcotest.(check bool) "parse valid filename" true (is_ok result);
   let version = get_ok result in
   Alcotest.(check int64_testable) "correct version" 20240115120000L version;
 
   let result2 =
-    Migra.Migration.parse_version "/path/to/20240115120000_create_users.sql"
+    Migra_engine.Migration.parse_version
+      "/path/to/20240115120000_create_users.sql"
   in
   Alcotest.(check bool) "parse filename with path" true (is_ok result2);
   let version2 = get_ok result2 in
@@ -32,20 +33,20 @@ let test_parse_version_valid () =
     "correct version from path" 20240115120000L version2
 
 let test_parse_version_invalid () =
-  let result1 = Migra.Migration.parse_version "2024_short.sql" in
+  let result1 = Migra_engine.Migration.parse_version "2024_short.sql" in
   Alcotest.(check bool) "reject short version" true (is_error result1);
 
   let result2 =
-    Migra.Migration.parse_version "20240115120000create_users.sql"
+    Migra_engine.Migration.parse_version "20240115120000create_users.sql"
   in
   Alcotest.(check bool) "reject missing underscore" true (is_error result2);
 
   let result3 =
-    Migra.Migration.parse_version "2024011512000X_create_users.sql"
+    Migra_engine.Migration.parse_version "2024011512000X_create_users.sql"
   in
   Alcotest.(check bool) "reject non-numeric version" true (is_error result3);
 
-  let result4 = Migra.Migration.parse_version "invalid_name" in
+  let result4 = Migra_engine.Migration.parse_version "invalid_name" in
   Alcotest.(check bool) "reject invalid format" true (is_error result4);
 
   (* Strict: the version must be exactly 14 ASCII decimal digits. Int64.of_string
@@ -55,19 +56,20 @@ let test_parse_version_invalid () =
       Alcotest.(check bool)
         (Printf.sprintf "reject %s" f)
         true
-        (is_error (Migra.Migration.parse_version f)))
+        (is_error (Migra_engine.Migration.parse_version f)))
     [ "-2024011512000_x.sql"; "0x012345678901_x.sql"; "1234567890_234_x.sql" ]
 
 let test_parse_description_valid () =
   let result =
-    Migra.Migration.parse_description "20240115120000_create_users.sql"
+    Migra_engine.Migration.parse_description "20240115120000_create_users.sql"
   in
   Alcotest.(check bool) "parse valid description" true (is_ok result);
   let desc = get_ok result in
   Alcotest.(check string) "correct description" "create_users" desc;
 
   let result2 =
-    Migra.Migration.parse_description "20240115120000_add_user_email_column.sql"
+    Migra_engine.Migration.parse_description
+      "20240115120000_add_user_email_column.sql"
   in
   Alcotest.(check bool)
     "parse multi-underscore description" true (is_ok result2);
@@ -76,7 +78,8 @@ let test_parse_description_valid () =
     "correct multi-word description" "add_user_email_column" desc2;
 
   let result3 =
-    Migra.Migration.parse_description "/migrations/20240115120000_test.sql"
+    Migra_engine.Migration.parse_description
+      "/migrations/20240115120000_test.sql"
   in
   Alcotest.(check bool) "parse description from path" true (is_ok result3);
   let desc3 = get_ok result3 in
@@ -84,35 +87,37 @@ let test_parse_description_valid () =
 
 let test_parse_description_invalid () =
   let result1 =
-    Migra.Migration.parse_description "20240115120000_create_users.txt"
+    Migra_engine.Migration.parse_description "20240115120000_create_users.txt"
   in
   Alcotest.(check bool) "reject wrong extension" true (is_error result1);
 
   let result2 =
-    Migra.Migration.parse_description "20240115120000_create_users"
+    Migra_engine.Migration.parse_description "20240115120000_create_users"
   in
   Alcotest.(check bool) "reject no extension" true (is_error result2);
 
-  let result3 = Migra.Migration.parse_description "invalid_name.sql" in
+  let result3 = Migra_engine.Migration.parse_description "invalid_name.sql" in
   Alcotest.(check bool) "reject invalid format" true (is_error result3)
 
 let test_from_file_valid () =
   let result =
-    Migra.Migration.from_file "/migrations/20240115120000_create_users.sql"
+    Migra_engine.Migration.from_file
+      "/migrations/20240115120000_create_users.sql"
   in
   Alcotest.(check bool) "from_file succeeds" true (is_ok result);
 
   let migration = get_ok result in
   Alcotest.(check int64_testable)
-    "correct version" 20240115120000L migration.Migra.Migration.version;
+    "correct version" 20240115120000L migration.Migra_engine.Migration.version;
   Alcotest.(check string)
-    "correct description" "create_users" migration.Migra.Migration.description;
+    "correct description" "create_users"
+    migration.Migra_engine.Migration.description;
   Alcotest.(check string)
     "correct file_path" "/migrations/20240115120000_create_users.sql"
-    migration.Migra.Migration.file_path
+    migration.Migra_engine.Migration.file_path
 
 let test_from_file_invalid () =
-  let result = Migra.Migration.from_file "invalid_filename.sql" in
+  let result = Migra_engine.Migration.from_file "invalid_filename.sql" in
   Alcotest.(check bool) "from_file rejects invalid" true (is_error result)
 
 let test_parse_section () =
@@ -124,12 +129,12 @@ CREATE TABLE users (id INT);
 DROP TABLE users;|}
   in
 
-  let up = Migra.Migration.parse_section content "up" in
+  let up = Migra_engine.Migration.parse_section content "up" in
   Alcotest.(check bool) "up section found" true (Option.is_some up);
   Alcotest.(check string)
     "correct up content" "CREATE TABLE users (id INT);" (Option.get up);
 
-  let down = Migra.Migration.parse_section content "down" in
+  let down = Migra_engine.Migration.parse_section content "down" in
   Alcotest.(check bool) "down section found" true (Option.is_some down);
   Alcotest.(check string)
     "correct down content" "DROP TABLE users;" (Option.get down)
@@ -138,7 +143,7 @@ let test_parse_section_missing () =
   let content = {|-- +migrate up
 CREATE TABLE users (id INT);|} in
 
-  let down = Migra.Migration.parse_section content "down" in
+  let down = Migra_engine.Migration.parse_section content "down" in
   Alcotest.(check bool)
     "returns None for missing section" true (Option.is_none down)
 
@@ -157,7 +162,7 @@ CREATE TABLE users (
 DROP TABLE users;|}
   in
 
-  let up = Migra.Migration.parse_section content "up" in
+  let up = Migra_engine.Migration.parse_section content "up" in
   Alcotest.(check bool)
     "up section found with comments" true (Option.is_some up);
 
@@ -170,43 +175,45 @@ DROP TABLE users;|}
     (Test_helpers.string_contains_substring up_content "CREATE")
 
 let test_make_filename () =
-  let filename = Migra.Migration.make_filename 20240115120000L "create_users" in
+  let filename =
+    Migra_engine.Migration.make_filename 20240115120000L "create_users"
+  in
   Alcotest.(check string)
     "correct filename format" "20240115120000_create_users.sql" filename
 
 let test_compare () =
   let m1 =
     {
-      Migra.Migration.version = 20240115120000L;
+      Migra_engine.Migration.version = 20240115120000L;
       description = "first";
       file_path = "first.sql";
     }
   in
   let m2 =
     {
-      Migra.Migration.version = 20240115130000L;
+      Migra_engine.Migration.version = 20240115130000L;
       description = "second";
       file_path = "second.sql";
     }
   in
 
-  Alcotest.(check bool) "m1 < m2" true (Migra.Migration.compare m1 m2 < 0);
-  Alcotest.(check bool) "m2 > m1" true (Migra.Migration.compare m2 m1 > 0);
-  Alcotest.(check bool) "m1 = m1" true (Migra.Migration.compare m1 m1 = 0);
+  Alcotest.(check bool) "m1 < m2" true (Migra_engine.Migration.compare m1 m2 < 0);
+  Alcotest.(check bool) "m2 > m1" true (Migra_engine.Migration.compare m2 m1 > 0);
+  Alcotest.(check bool) "m1 = m1" true (Migra_engine.Migration.compare m1 m1 = 0);
 
   let unsorted = [ m2; m1 ] in
-  let sorted = List.sort Migra.Migration.compare unsorted in
+  let sorted = List.sort Migra_engine.Migration.compare unsorted in
   Alcotest.(check bool) "sorted list is correct" true (List.hd sorted = m1)
 
 let test_to_string () =
   let migration =
     {
-      Migra.Migration.version = 20240115120000L;
+      Migra_engine.Migration.version = 20240115120000L;
       description = "create_users";
       file_path = "migration.sql";
     }
   in
-  let str = Migra.Migration.to_string migration in
+  let str = Migra_engine.Migration.to_string migration in
   Alcotest.(check bool)
     "contains version" true
     (Test_helpers.string_contains_substring str "20240115120000");
@@ -224,13 +231,13 @@ let test_read_up_sql_with_file () =
 
          let migration =
            {
-             Migra.Migration.version = 20240115120000L;
+             Migra_engine.Migration.version = 20240115120000L;
              description = "create_users";
              file_path = filepath;
            }
          in
 
-         let result = Migra.Migration.read_up_sql migration in
+         let result = Migra_engine.Migration.read_up_sql migration in
          Alcotest.(check bool) "read_up_sql succeeds" true (is_ok result);
 
          let sql = get_ok result in
@@ -250,13 +257,13 @@ let test_read_down_sql_with_file () =
 
          let migration =
            {
-             Migra.Migration.version = 20240115120000L;
+             Migra_engine.Migration.version = 20240115120000L;
              description = "create_users";
              file_path = filepath;
            }
          in
 
-         let result = Migra.Migration.read_down_sql migration in
+         let result = Migra_engine.Migration.read_down_sql migration in
          Alcotest.(check bool) "read_down_sql succeeds" true (is_ok result);
 
          let sql = get_ok result in
@@ -276,13 +283,13 @@ let test_read_sql_missing_section () =
 
          let migration =
            {
-             Migra.Migration.version = 20240115120000L;
+             Migra_engine.Migration.version = 20240115120000L;
              description = "incomplete";
              file_path = filepath;
            }
          in
 
-         let result = Migra.Migration.read_down_sql migration in
+         let result = Migra_engine.Migration.read_down_sql migration in
          Alcotest.(check bool)
            "read_down_sql fails on missing section" true (is_error result);
 
@@ -303,13 +310,13 @@ let test_read_sql_empty_section () =
 
          let migration =
            {
-             Migra.Migration.version = 20240115120000L;
+             Migra_engine.Migration.version = 20240115120000L;
              description = "empty";
              file_path = filepath;
            }
          in
 
-         let result = Migra.Migration.read_up_sql migration in
+         let result = Migra_engine.Migration.read_up_sql migration in
          Alcotest.(check bool)
            "read_up_sql fails on empty section" true (is_error result);
 
@@ -323,10 +330,11 @@ let test_read_sql_empty_section () =
 let test_parse_section_exact_marker () =
   Alcotest.(check bool)
     "up does not match upgrade" true
-    (Migra.Migration.parse_section "-- +migrate upgrade\nSELECT 1;\n" "up"
+    (Migra_engine.Migration.parse_section "-- +migrate upgrade\nSELECT 1;\n"
+       "up"
     = None);
   match
-    Migra.Migration.parse_section
+    Migra_engine.Migration.parse_section
       "-- +migrate up\nSELECT 2;\n-- +migrate down\nSELECT 3;\n" "up"
   with
   | Some s ->
@@ -341,17 +349,17 @@ let test_checksum () =
              "CREATE TABLE c (id int);" "DROP TABLE c;"
          in
          let m =
-           match Migra.Migration.from_file f with
+           match Migra_engine.Migration.from_file f with
            | Ok m -> m
            | Error _ -> Alcotest.fail "from_file failed"
          in
          let cs1 =
-           match Migra.Migration.checksum m with
+           match Migra_engine.Migration.checksum m with
            | Ok c -> c
            | Error _ -> Alcotest.fail "checksum failed"
          in
          let cs2 =
-           match Migra.Migration.checksum m with
+           match Migra_engine.Migration.checksum m with
            | Ok c -> c
            | Error _ -> Alcotest.fail "checksum failed"
          in
@@ -364,7 +372,7 @@ let test_checksum () =
             DROP TABLE c;\n";
          close_out oc;
          let cs3 =
-           match Migra.Migration.checksum m with
+           match Migra_engine.Migration.checksum m with
            | Ok c -> c
            | Error _ -> Alcotest.fail "checksum failed"
          in
@@ -372,7 +380,7 @@ let test_checksum () =
          Lwt.return_unit))
 
 let test_validate_table_name () =
-  let ok n = Result.is_ok (Migra.Runner.validate_table_name n) in
+  let ok n = Result.is_ok (Migra_engine.Runner.validate_table_name n) in
   Alcotest.(check bool) "plain" true (ok "schema_migrations");
   Alcotest.(check bool) "schema-qualified" true (ok "public.schema_migrations");
   Alcotest.(check bool) "underscore start" true (ok "_t");

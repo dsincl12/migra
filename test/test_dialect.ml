@@ -1,62 +1,70 @@
 let test_detect_postgresql () =
-  let result1 = Migra.Dialect.detect_from_url "postgresql://localhost/test" in
+  let result1 =
+    Migra_engine.Dialect.detect_from_url "postgresql://localhost/test"
+  in
   Alcotest.(
     check
       (result
          (of_pp (fun fmt t ->
-              Format.fprintf fmt "%s" (Migra.Dialect.to_string t)))
+              Format.fprintf fmt "%s" (Migra_engine.Dialect.to_string t)))
          string))
-    "postgresql:// scheme" (Ok Migra.Dialect.PostgreSQL) result1;
+    "postgresql:// scheme" (Ok Migra_engine.Dialect.PostgreSQL) result1;
 
-  let result2 = Migra.Dialect.detect_from_url "postgres://localhost/test" in
+  let result2 =
+    Migra_engine.Dialect.detect_from_url "postgres://localhost/test"
+  in
   Alcotest.(
     check
       (result
          (of_pp (fun fmt t ->
-              Format.fprintf fmt "%s" (Migra.Dialect.to_string t)))
+              Format.fprintf fmt "%s" (Migra_engine.Dialect.to_string t)))
          string))
-    "postgres:// scheme" (Ok Migra.Dialect.PostgreSQL) result2
+    "postgres:// scheme" (Ok Migra_engine.Dialect.PostgreSQL) result2
 
 let test_detect_mariadb () =
-  let result1 = Migra.Dialect.detect_from_url "mariadb://localhost/test" in
+  let result1 =
+    Migra_engine.Dialect.detect_from_url "mariadb://localhost/test"
+  in
   Alcotest.(
     check
       (result
          (of_pp (fun fmt t ->
-              Format.fprintf fmt "%s" (Migra.Dialect.to_string t)))
+              Format.fprintf fmt "%s" (Migra_engine.Dialect.to_string t)))
          string))
-    "mariadb:// scheme" (Ok Migra.Dialect.MariaDB) result1;
+    "mariadb:// scheme" (Ok Migra_engine.Dialect.MariaDB) result1;
 
-  let result2 = Migra.Dialect.detect_from_url "mysql://localhost/test" in
+  let result2 = Migra_engine.Dialect.detect_from_url "mysql://localhost/test" in
   Alcotest.(
     check
       (result
          (of_pp (fun fmt t ->
-              Format.fprintf fmt "%s" (Migra.Dialect.to_string t)))
+              Format.fprintf fmt "%s" (Migra_engine.Dialect.to_string t)))
          string))
-    "mysql:// scheme" (Ok Migra.Dialect.MariaDB) result2
+    "mysql:// scheme" (Ok Migra_engine.Dialect.MariaDB) result2
 
 let test_detect_sqlite () =
-  let result1 = Migra.Dialect.detect_from_url "sqlite3://./test.db" in
+  let result1 = Migra_engine.Dialect.detect_from_url "sqlite3://./test.db" in
   Alcotest.(
     check
       (result
          (of_pp (fun fmt t ->
-              Format.fprintf fmt "%s" (Migra.Dialect.to_string t)))
+              Format.fprintf fmt "%s" (Migra_engine.Dialect.to_string t)))
          string))
-    "sqlite3:// with path" (Ok Migra.Dialect.SQLite) result1;
+    "sqlite3:// with path" (Ok Migra_engine.Dialect.SQLite) result1;
 
-  let result2 = Migra.Dialect.detect_from_url "sqlite3://:memory:" in
+  let result2 = Migra_engine.Dialect.detect_from_url "sqlite3://:memory:" in
   Alcotest.(
     check
       (result
          (of_pp (fun fmt t ->
-              Format.fprintf fmt "%s" (Migra.Dialect.to_string t)))
+              Format.fprintf fmt "%s" (Migra_engine.Dialect.to_string t)))
          string))
-    "sqlite3:// with :memory:" (Ok Migra.Dialect.SQLite) result2
+    "sqlite3:// with :memory:" (Ok Migra_engine.Dialect.SQLite) result2
 
 let test_detect_unsupported () =
-  let result1 = Migra.Dialect.detect_from_url "oracle://localhost/test" in
+  let result1 =
+    Migra_engine.Dialect.detect_from_url "oracle://localhost/test"
+  in
   (match result1 with
   | Error msg ->
       Alcotest.(check bool)
@@ -64,7 +72,9 @@ let test_detect_unsupported () =
         (String.length msg > 0 && String.sub msg 0 11 = "Unsupported")
   | Ok _ -> Alcotest.fail "Should have returned error for oracle://");
 
-  let result2 = Migra.Dialect.detect_from_url "mongodb://localhost/test" in
+  let result2 =
+    Migra_engine.Dialect.detect_from_url "mongodb://localhost/test"
+  in
   (match result2 with
   | Error _ -> ()
   | Ok _ -> Alcotest.fail "Should have returned error for mongodb://");
@@ -73,7 +83,7 @@ let test_detect_unsupported () =
      raise Invalid_argument instead of returning a clean Error. *)
   List.iter
     (fun url ->
-      match Migra.Dialect.detect_from_url url with
+      match Migra_engine.Dialect.detect_from_url url with
       | Error _ -> ()
       | Ok _ ->
           Alcotest.fail (Printf.sprintf "Should have returned error for %S" url))
@@ -82,18 +92,18 @@ let test_detect_unsupported () =
 let test_to_string () =
   Alcotest.(check string)
     "PostgreSQL name" "PostgreSQL"
-    (Migra.Dialect.to_string Migra.Dialect.PostgreSQL);
+    (Migra_engine.Dialect.to_string Migra_engine.Dialect.PostgreSQL);
   Alcotest.(check string)
     "MariaDB name" "MariaDB"
-    (Migra.Dialect.to_string Migra.Dialect.MariaDB);
+    (Migra_engine.Dialect.to_string Migra_engine.Dialect.MariaDB);
   Alcotest.(check string)
     "SQLite name" "SQLite"
-    (Migra.Dialect.to_string Migra.Dialect.SQLite)
+    (Migra_engine.Dialect.to_string Migra_engine.Dialect.SQLite)
 
 let test_get_dialect () =
   let module PG =
-    (val Migra.Dialect.get_dialect Migra.Dialect.PostgreSQL
-        : Migra.Dialect.DIALECT)
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.PostgreSQL
+        : Migra_engine.Dialect.DIALECT)
   in
   Alcotest.(check string) "PostgreSQL dialect name" "PostgreSQL" PG.name;
   Alcotest.(check (option int))
@@ -104,8 +114,8 @@ let test_get_dialect () =
     "PostgreSQL supports lifecycle" true PG.supports_database_lifecycle;
 
   let module Maria =
-    (val Migra.Dialect.get_dialect Migra.Dialect.MariaDB
-        : Migra.Dialect.DIALECT)
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.MariaDB
+        : Migra_engine.Dialect.DIALECT)
   in
   Alcotest.(check string) "MariaDB dialect name" "MariaDB" Maria.name;
   Alcotest.(check (option int))
@@ -116,7 +126,8 @@ let test_get_dialect () =
     "MariaDB supports lifecycle" true Maria.supports_database_lifecycle;
 
   let module Lite =
-    (val Migra.Dialect.get_dialect Migra.Dialect.SQLite : Migra.Dialect.DIALECT)
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.SQLite
+        : Migra_engine.Dialect.DIALECT)
   in
   Alcotest.(check string) "SQLite dialect name" "SQLite" Lite.name;
   Alcotest.(check (option int)) "SQLite default port" None Lite.default_port;
@@ -126,8 +137,8 @@ let test_get_dialect () =
 
 let test_postgresql_dialect_sql () =
   let module D =
-    (val Migra.Dialect.get_dialect Migra.Dialect.PostgreSQL
-        : Migra.Dialect.DIALECT)
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.PostgreSQL
+        : Migra_engine.Dialect.DIALECT)
   in
   Alcotest.(check bool)
     "database_exists_sql contains pg_database" true
@@ -149,7 +160,8 @@ let test_postgresql_dialect_sql () =
 
 let test_sqlite_dialect_sql () =
   let module D =
-    (val Migra.Dialect.get_dialect Migra.Dialect.SQLite : Migra.Dialect.DIALECT)
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.SQLite
+        : Migra_engine.Dialect.DIALECT)
   in
   let timestamp_sql = D.timestamp_to_string "created_at" in
   Alcotest.(check string)

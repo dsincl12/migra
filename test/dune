@@ -3,7 +3,7 @@
 (library
  (name test_helpers)
  (modules test_helpers)
- (libraries migra alcotest lwt lwt.unix caqti caqti-lwt uri)
+ (libraries migra migra.engine alcotest lwt lwt.unix caqti caqti-lwt uri)
  (preprocess
   (pps lwt_ppx)))
 
@@ -19,7 +19,14 @@
   test_migration
   test_discovery
   test_dialect)
- (libraries test_helpers migra alcotest alcotest-lwt lwt lwt.unix)
+ (libraries
+  test_helpers
+  migra
+  migra.engine
+  alcotest
+  alcotest-lwt
+  lwt
+  lwt.unix)
  (preprocess
   (pps lwt_ppx)))
 
@@ -40,6 +47,7 @@
  (libraries
   test_helpers
   migra
+  migra.engine
   alcotest
   alcotest-lwt
   lwt

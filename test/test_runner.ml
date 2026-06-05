@@ -2,12 +2,13 @@ open Lwt.Infix
 open Test_helpers
 
 let with_initialized_db db_url f =
-  Migra.Database.connect_db db_url >>= function
+  Migra_engine.Database.connect_db db_url >>= function
   | Error err ->
       Lwt.fail_with
         (Printf.sprintf "Failed to connect: %s" (Migra.Types.show_error err))
   | Ok db -> (
-      Migra.Runner.ensure_migrations_table Migra.Dialect.PostgreSQL db
+      Migra_engine.Runner.ensure_migrations_table
+        Migra_engine.Dialect.PostgreSQL db
       >>= function
       | Error err ->
           Lwt.fail_with
@@ -25,20 +26,22 @@ let test_run_migration_success () =
           in
 
           let migration =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok (m :: _) -> m
             | _ -> Alcotest.fail "Failed to discover migration"
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migration db migration >>= fun result ->
+              Migra_engine.Runner.run_migration db migration >>= fun result ->
               match result with
-              | Migra.Runner.Failure (_migration, err) ->
+              | Migra_engine.Runner.Failure (_migration, err) ->
                   Alcotest.fail
                     (Printf.sprintf "run_migration failed: %s"
                        (Migra.Types.show_error err))
-              | Migra.Runner.Success _migration -> (
-                  Migra.Runner.is_applied db version >>= function
+              | Migra_engine.Runner.Success _migration -> (
+                  Migra_engine.Runner.is_applied db version >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "is_applied check failed: %s"
@@ -78,18 +81,20 @@ let test_run_migration_sql_failure_rollback () =
           in
 
           let migration =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok (m :: _) -> m
             | _ -> Alcotest.fail "Failed to discover migration"
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migration db migration >>= fun result ->
+              Migra_engine.Runner.run_migration db migration >>= fun result ->
               match result with
-              | Migra.Runner.Success _ ->
+              | Migra_engine.Runner.Success _ ->
                   Alcotest.fail "Expected migration to fail, but it succeeded"
-              | Migra.Runner.Failure (_migration, _err) -> (
-                  Migra.Runner.is_applied db version >>= function
+              | Migra_engine.Runner.Failure (_migration, _err) -> (
+                  Migra_engine.Runner.is_applied db version >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "is_applied check failed: %s"
@@ -123,28 +128,32 @@ let test_run_migration_file_error () =
   with_test_db_pooled "runner_file_err" (fun db_url ->
       with_temp_dir "migrations" (fun migrations_dir ->
           let version = 20240115120000L in
-          let filename = Migra.Migration.make_filename version "no_sections" in
+          let filename =
+            Migra_engine.Migration.make_filename version "no_sections"
+          in
           let filepath = Filename.concat migrations_dir filename in
           let oc = open_out filepath in
           output_string oc "This file has no up/down sections\n";
           close_out oc;
 
           let migration =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok (m :: _) -> m
             | _ -> Alcotest.fail "Failed to discover migration"
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migration db migration >>= fun result ->
+              Migra_engine.Runner.run_migration db migration >>= fun result ->
               Alcotest.(check bool)
                 "migration failed" false
-                (Migra.Runner.is_success result);
+                (Migra_engine.Runner.is_success result);
               Alcotest.(check bool)
                 "has error message" true
-                (Option.is_some (Migra.Runner.error_of_result result));
+                (Option.is_some (Migra_engine.Runner.error_of_result result));
 
-              Migra.Runner.is_applied db version >>= function
+              Migra_engine.Runner.is_applied db version >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "is_applied check failed: %s"
@@ -177,7 +186,9 @@ let test_run_migrations_multiple () =
           in
 
           let migrations =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok migs -> migs
             | Error err ->
                 Alcotest.fail
@@ -186,16 +197,17 @@ let test_run_migrations_multiple () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migrations db migrations >>= fun results ->
+              Migra_engine.Runner.run_migrations db migrations
+              >>= fun results ->
               Alcotest.(check int) "3 results" 3 (List.length results);
               List.iter
                 (fun result ->
                   Alcotest.(check bool)
                     "migration succeeded" true
-                    (Migra.Runner.is_success result))
+                    (Migra_engine.Runner.is_success result))
                 results;
 
-              Migra.Runner.get_applied_versions db >>= function
+              Migra_engine.Runner.get_applied_versions db >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "get_applied_versions failed: %s"
@@ -234,7 +246,9 @@ let test_run_migrations_stops_on_failure () =
           in
 
           let migrations =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok migs -> migs
             | Error err ->
                 Alcotest.fail
@@ -243,17 +257,18 @@ let test_run_migrations_stops_on_failure () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migrations db migrations >>= fun results ->
+              Migra_engine.Runner.run_migrations db migrations
+              >>= fun results ->
               Alcotest.(check int)
                 "2 results (stopped after failure)" 2 (List.length results);
               Alcotest.(check bool)
                 "first succeeded" true
-                (Migra.Runner.is_success (List.nth results 0));
+                (Migra_engine.Runner.is_success (List.nth results 0));
               Alcotest.(check bool)
                 "second failed" false
-                (Migra.Runner.is_success (List.nth results 1));
+                (Migra_engine.Runner.is_success (List.nth results 1));
 
-              Migra.Runner.get_applied_versions db >>= function
+              Migra_engine.Runner.get_applied_versions db >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "get_applied_versions failed: %s"
@@ -276,30 +291,33 @@ let test_rollback_migration_success () =
           in
 
           let migration =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok (m :: _) -> m
             | _ -> Alcotest.fail "Failed to discover migration"
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migration db migration >>= function
-              | Migra.Runner.Failure (_, err) ->
+              Migra_engine.Runner.run_migration db migration >>= function
+              | Migra_engine.Runner.Failure (_, err) ->
                   Alcotest.fail
                     (Printf.sprintf "run_migration failed: %s"
                        (Migra.Types.show_error err))
-              | Migra.Runner.Success _ -> (
-                  Migra.Runner.rollback_migration db migration >>= fun result ->
+              | Migra_engine.Runner.Success _ -> (
+                  Migra_engine.Runner.rollback_migration db migration
+                  >>= fun result ->
                   match result with
-                  | Migra.Runner.Failure (_, err) ->
+                  | Migra_engine.Runner.Failure (_, err) ->
                       Alcotest.fail
                         (Printf.sprintf "rollback_migration failed: %s"
                            (Migra.Types.show_error err))
-                  | Migra.Runner.Success _ -> (
+                  | Migra_engine.Runner.Success _ -> (
                       Alcotest.(check bool)
                         "rollback succeeded" true
-                        (Migra.Runner.is_success result);
+                        (Migra_engine.Runner.is_success result);
 
-                      Migra.Runner.is_applied db version >>= function
+                      Migra_engine.Runner.is_applied db version >>= function
                       | Error err ->
                           Alcotest.fail
                             (Printf.sprintf "is_applied check failed: %s"
@@ -339,24 +357,27 @@ let test_rollback_migration_sql_failure () =
           in
 
           let migration =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok (m :: _) -> m
             | _ -> Alcotest.fail "Failed to discover migration"
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migration db migration >>= function
-              | Migra.Runner.Failure (_, err) ->
+              Migra_engine.Runner.run_migration db migration >>= function
+              | Migra_engine.Runner.Failure (_, err) ->
                   Alcotest.fail
                     (Printf.sprintf "run_migration failed: %s"
                        (Migra.Types.show_error err))
-              | Migra.Runner.Success _ -> (
-                  Migra.Runner.rollback_migration db migration >>= fun result ->
+              | Migra_engine.Runner.Success _ -> (
+                  Migra_engine.Runner.rollback_migration db migration
+                  >>= fun result ->
                   Alcotest.(check bool)
                     "rollback failed" false
-                    (Migra.Runner.is_success result);
+                    (Migra_engine.Runner.is_success result);
 
-                  Migra.Runner.is_applied db version >>= function
+                  Migra_engine.Runner.is_applied db version >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "is_applied check failed: %s"
@@ -391,7 +412,9 @@ let test_rollback_step () =
           in
 
           let migrations =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok migs -> migs
             | Error err ->
                 Alcotest.fail
@@ -400,8 +423,9 @@ let test_rollback_step () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migrations db migrations >>= fun _ ->
-              Migra.Runner.rollback_step ~migrations_dir db 2 >>= function
+              Migra_engine.Runner.run_migrations db migrations >>= fun _ ->
+              Migra_engine.Runner.rollback_step ~migrations_dir db 2
+              >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "rollback_step failed: %s"
@@ -409,7 +433,7 @@ let test_rollback_step () =
               | Ok results -> (
                   Alcotest.(check int) "2 rollbacks" 2 (List.length results);
 
-                  Migra.Runner.get_applied_versions db >>= function
+                  Migra_engine.Runner.get_applied_versions db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_applied_versions failed: %s"
@@ -445,7 +469,9 @@ let test_rollback_to () =
           in
 
           let migrations =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok migs -> migs
             | Error err ->
                 Alcotest.fail
@@ -454,8 +480,8 @@ let test_rollback_to () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migrations db migrations >>= fun _ ->
-              Migra.Runner.rollback_to ~migrations_dir db v1 >>= function
+              Migra_engine.Runner.run_migrations db migrations >>= fun _ ->
+              Migra_engine.Runner.rollback_to ~migrations_dir db v1 >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "rollback_to failed: %s"
@@ -463,7 +489,7 @@ let test_rollback_to () =
               | Ok results -> (
                   Alcotest.(check int) "2 rollbacks" 2 (List.length results);
 
-                  Migra.Runner.get_applied_versions db >>= function
+                  Migra_engine.Runner.get_applied_versions db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_applied_versions failed: %s"
@@ -499,7 +525,9 @@ let test_rollback_all () =
           in
 
           let migrations =
-            match Migra.Discovery.find_migrations ~dir:migrations_dir () with
+            match
+              Migra_engine.Discovery.find_migrations ~dir:migrations_dir ()
+            with
             | Ok migs -> migs
             | Error err ->
                 Alcotest.fail
@@ -508,8 +536,8 @@ let test_rollback_all () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_migrations db migrations >>= fun _ ->
-              Migra.Runner.rollback_all ~migrations_dir db >>= function
+              Migra_engine.Runner.run_migrations db migrations >>= fun _ ->
+              Migra_engine.Runner.rollback_all ~migrations_dir db >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "rollback_all failed: %s"
@@ -517,7 +545,7 @@ let test_rollback_all () =
               | Ok results -> (
                   Alcotest.(check int) "3 rollbacks" 3 (List.length results);
 
-                  Migra.Runner.get_applied_versions db >>= function
+                  Migra_engine.Runner.get_applied_versions db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_applied_versions failed: %s"
@@ -551,7 +579,7 @@ let test_run_pending () =
           in
 
           with_initialized_db db_url (fun db ->
-              Migra.Runner.run_pending db migrations_dir >>= function
+              Migra_engine.Runner.run_pending db migrations_dir >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "run_pending failed: %s"
@@ -563,10 +591,10 @@ let test_run_pending () =
                     (fun result ->
                       Alcotest.(check bool)
                         "migration succeeded" true
-                        (Migra.Runner.is_success result))
+                        (Migra_engine.Runner.is_success result))
                     results;
 
-                  Migra.Runner.get_applied_versions db >>= function
+                  Migra_engine.Runner.get_applied_versions db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_applied_versions failed: %s"
