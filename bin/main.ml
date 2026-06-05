@@ -197,7 +197,7 @@ let status_cmd =
 let main_cmd =
   let doc = "Simple database migration tool for OCaml" in
   let sdocs = Manpage.s_common_options in
-  let info = Cmd.info "migra" ~version:"0.1.0" ~doc ~sdocs in
+  let info = Cmd.info "migra" ~version:"1.0.0" ~doc ~sdocs in
   Cmd.group info
     [
       generate_cmd;
