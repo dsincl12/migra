@@ -154,8 +154,8 @@ MARIADB_URL=mariadb://root:root@127.0.0.1:3306/mysql \
   dune exec test/test_integration.exe
 ```
 
-More detail lives in [`docs/`](docs/) (user guide, troubleshooting, local
-testing).
+See [`docs/`](docs/) for [troubleshooting](docs/TROUBLESHOOTING.md) and
+[running the tests](docs/TESTING_LOCALLY.md).
 
 ## License
 
