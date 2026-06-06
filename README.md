@@ -148,10 +148,12 @@ dune build
 dune fmt              # format (ocamlformat)
 dune runtest          # unit tests (no database needed)
 
-# Integration tests need running databases; point the env at them:
-DATABASE_URL=postgresql://postgres@localhost:5432/postgres \
-MARIADB_URL=mariadb://root:root@127.0.0.1:3306/mysql \
+# Integration tests need running databases; docker-compose.yml brings them up:
+docker compose up -d --wait
+DATABASE_URL=postgresql://postgres@localhost:5433/postgres \
+MARIADB_URL=mariadb://root:root@127.0.0.1:3307/mysql \
   dune exec test/test_integration.exe
+docker compose down
 ```
 
 See [`docs/`](docs/) for [troubleshooting](docs/TROUBLESHOOTING.md) and

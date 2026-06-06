@@ -28,17 +28,10 @@ dune runtest      # runs the unit suite - no database needed
 ## Integration tests
 
 These need running databases. SQLite needs nothing; PostgreSQL and MariaDB are
-selected via `DATABASE_URL` and `MARIADB_URL`. Throwaway containers work well:
+selected via `DATABASE_URL` and `MARIADB_URL`. A `docker-compose.yml` brings both up:
 
 ```sh
-# PostgreSQL on :5433 (trust auth, no password)
-docker run -d --name migra-pg \
-  -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=postgres \
-  -p 5433:5432 postgres:16
-
-# MariaDB on :3307
-docker run -d --name migra-maria \
-  -e MARIADB_ROOT_PASSWORD=root -p 3307:3306 mariadb:11
+docker compose up -d --wait
 ```
 
 Then run the integration suite (note `127.0.0.1` for MariaDB so it uses TCP, not
@@ -60,5 +53,5 @@ dune exec test/test_integration.exe -- test E2E
 ## Cleanup
 
 ```sh
-docker rm -f migra-pg migra-maria
+docker compose down
 ```
