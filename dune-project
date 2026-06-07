@@ -21,7 +21,6 @@
  (synopsis "A database migration tool for OCaml supporting PostgreSQL, MariaDB, and SQLite")
  (depends
    (ocaml (>= 4.14.0))
-   (dune (>= 3.12))
    (lwt (>= 5.6.0))
    (alcotest (and :with-test (>= 1.7.0)))
    (alcotest-lwt (and :with-test (>= 1.7.0)))

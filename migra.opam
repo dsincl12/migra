@@ -13,8 +13,8 @@ homepage: "https://github.com/dsincl12/migra"
 doc: "https://github.com/dsincl12/migra"
 bug-reports: "https://github.com/dsincl12/migra/issues"
 depends: [
+  "dune" {>= "3.12"}
   "ocaml" {>= "4.14.0"}
-  "dune" {>= "3.12" & >= "3.12"}
   "lwt" {>= "5.6.0"}
   "alcotest" {with-test & >= "1.7.0"}
   "alcotest-lwt" {with-test & >= "1.7.0"}
