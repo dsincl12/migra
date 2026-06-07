@@ -23,6 +23,7 @@ type migration_error =
       int64 * string (* version, file: applied file was modified *)
   | AppliedFileMissing of int64 (* version recorded as applied but no file *)
   | OutOfOrder of int64 * int64 (* pending version, latest applied version *)
+  | ExecutionFailed of int64 * string (* version, error from running its SQL *)
 
 type error =
   | FileError of file_error
@@ -85,3 +86,5 @@ and show_migration_error = function
         "Migration %Ld is older than the most recently applied migration %Ld \
          (out-of-order migration); applying it now would change history."
         version latest
+  | ExecutionFailed (version, msg) ->
+      Printf.sprintf "Migration %Ld failed: %s" version msg

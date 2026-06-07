@@ -145,6 +145,80 @@ let test_run_stops_on_failure () =
 
               Lwt.return_unit))
 
+let test_run_or_error_ok () =
+  with_test_db_pooled "migrator_run_or_error_ok" (fun db_url ->
+      with_temp_dir "migrations" (fun migrations_dir ->
+          let v1 = 20240115120000L in
+          let v2 = 20240115130000L in
+          let _f1 =
+            create_migration_with_sections migrations_dir v1 "table1"
+              "CREATE TABLE table1 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE table1;"
+          in
+          let _f2 =
+            create_migration_with_sections migrations_dir v2 "table2"
+              "CREATE TABLE table2 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE table2;"
+          in
+          let config =
+            Migra.Migrator.
+              {
+                database_url = db_url;
+                migrations_dir;
+                verbose = false;
+                table = Migra_engine.Runner.default_table;
+              }
+          in
+          Migra.Migrator.run_or_error config >>= function
+          | Error err ->
+              Alcotest.fail
+                (Printf.sprintf "run_or_error returned Error on success: %s"
+                   (Migra.Types.show_error err))
+          | Ok result ->
+              Alcotest.(check int) "2 succeeded" 2 result.success_count;
+              Alcotest.(check int) "0 failures" 0 result.failure_count;
+              Lwt.return_unit))
+
+let test_run_or_error_failure () =
+  with_test_db_pooled "migrator_run_or_error_fail" (fun db_url ->
+      with_temp_dir "migrations" (fun migrations_dir ->
+          let v1 = 20240115120000L in
+          let v2 = 20240115130000L in
+          let _f1 =
+            create_migration_with_sections migrations_dir v1 "table1"
+              "CREATE TABLE table1 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE table1;"
+          in
+          let _f2 =
+            create_migration_with_sections migrations_dir v2 "bad"
+              "SELECT * FROM nonexistent_table;" "-- nothing"
+          in
+          let config =
+            Migra.Migrator.
+              {
+                database_url = db_url;
+                migrations_dir;
+                verbose = false;
+                table = Migra_engine.Runner.default_table;
+              }
+          in
+          Migra.Migrator.run_or_error config >>= function
+          | Ok _ ->
+              Alcotest.fail
+                "run_or_error returned Ok despite a failed migration"
+          | Error
+              (Migra.Types.MigrationError
+                 (Migra.Types.ExecutionFailed (version, msg))) ->
+              Alcotest.(check int64) "failed version reported" v2 version;
+              Alcotest.(check bool)
+                "error message non-empty" true
+                (String.length msg > 0);
+              Lwt.return_unit
+          | Error other ->
+              Alcotest.fail
+                (Printf.sprintf "unexpected error variant: %s"
+                   (Migra.Types.show_error other))))
+
 let test_rollback_step () =
   with_test_db_pooled "migrator_rollback_step" (fun db_url ->
       with_temp_dir "migrations" (fun migrations_dir ->
@@ -548,6 +622,8 @@ let suite =
     ("run_pending", `Quick, test_run_pending);
     ("run_no_pending", `Quick, test_run_no_pending);
     ("run_stops_on_failure", `Quick, test_run_stops_on_failure);
+    ("run_or_error_ok", `Quick, test_run_or_error_ok);
+    ("run_or_error_failure", `Quick, test_run_or_error_failure);
     ("rollback_step", `Quick, test_rollback_step);
     ("rollback_to", `Quick, test_rollback_to);
     ("rollback_all", `Quick, test_rollback_all);

@@ -20,10 +20,14 @@ First stable release.
 - `--dry-run` for `migrate` and `rollback` - preview without changing the
   database.
 - `--database-url` flag - overrides the `DATABASE_URL` environment variable.
-- Library facade - `Migra.Migrator` (run/rollback/redo/status/generate, with
-  `?on_event` progress callbacks) and `Migra.Database` (lifecycle + URL helpers)
-  form the public API; the implementation lives in the internal `migra.engine`
-  library.
+- Library facade - `Migra.Migrator`
+  (run/run_or_error/rollback/redo/status/generate, with `?on_event` progress
+  callbacks) and `Migra.Database` (lifecycle + URL helpers) form the public API;
+  the implementation lives in the internal `migra.engine` library.
+- `Migra.Migrator.run_or_error` - a fail-fast wrapper around `run` for the
+  migrate-on-startup path: a migration whose SQL fails is returned as `Error`
+  (`MigrationError (ExecutionFailed ...)`) rather than `Ok` with
+  `failure_count > 0`.
 - Arbitrary SQL support: dollar-quoted bodies, `DELIMITER` for MySQL/MariaDB
   routines, line/block comments, and literal `$`/`?` in statements.
 

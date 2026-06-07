@@ -22,6 +22,7 @@ type migration_error =
   | ChecksumMismatch of int64 * string
   | AppliedFileMissing of int64
   | OutOfOrder of int64 * int64
+  | ExecutionFailed of int64 * string
 
 type error =
   | FileError of file_error

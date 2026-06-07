@@ -189,6 +189,27 @@ let run ?(on_event = no_event) (config : config) =
                 ~table:config.table ~on_event db pending
               >>= fun results -> Lwt.return_ok (make_operation_result results)))
 
+let run_or_error ?(on_event = no_event) (config : config) :
+    (operation_result, Types.error) Lwt_result.t =
+  run ~on_event config >>= function
+  | Error _ as e -> Lwt.return e
+  | Ok result when succeeded result -> Lwt.return_ok result
+  | Ok result ->
+      let failed =
+        List.find_opt
+          (fun (r : migration_result) -> not r.success)
+          result.migrations
+      in
+      let err =
+        match failed with
+        | Some r ->
+            Types.MigrationError
+              (Types.ExecutionFailed
+                 (r.version, Option.value ~default:"unknown error" r.error))
+        | None -> Types.DiscoveryError "a migration failed"
+      in
+      Lwt.return_error err
+
 let rollback ?(on_event = no_event) (config : config) strategy =
   with_initialized_db ~table:config.table config.database_url
     (fun _dialect db ->

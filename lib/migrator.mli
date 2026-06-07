@@ -111,6 +111,16 @@ val run :
     @param config Migration configuration
     @return Operation result with per-migration outcomes *)
 
+val run_or_error :
+  ?on_event:(event -> unit Lwt.t) ->
+  config ->
+  (operation_result, Types.error) Lwt_result.t
+(** Like {!run}, but a migration whose SQL fails is returned as [Error]
+    ([MigrationError (ExecutionFailed (version, message))]) rather than [Ok]
+    with [failure_count > 0]. Convenient for the common startup path where any
+    failure should abort; on success the [operation_result] is returned
+    unchanged. *)
+
 (** Rollback strategy (an alias of {!Migra_engine.Runner.rollback_strategy}) *)
 type rollback_strategy = Migra_engine.Runner.rollback_strategy =
   | Step of int  (** Rollback last N migrations *)
