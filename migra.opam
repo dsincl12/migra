@@ -3,12 +3,12 @@ opam-version: "2.0"
 version: "1.0.0"
 synopsis:
   "A database migration tool for OCaml supporting PostgreSQL, MariaDB, and SQLite"
-maintainer: ["David Sinclair"]
+description:
+  "A database migration tool and library for OCaml. Migrations are plain SQL with up and down sections, and the database (PostgreSQL, MariaDB/MySQL, or SQLite) is selected from the connection URL. Applied migrations are tracked with checksums, and drift (a modified, missing, or out-of-order migration) is detected before anything runs. It can be used from the command line or embedded as a library to migrate on application startup."
+maintainer: ["David Sinclair <dsincl12@gmail.com>"]
 authors: ["David Sinclair"]
 license: "MIT"
-tags: [
-  "topics" "database" "migrations" "postgresql" "mariadb" "mysql" "sqlite"
-]
+tags: ["database" "migrations" "postgresql" "mariadb" "mysql" "sqlite"]
 homepage: "https://github.com/dsincl12/migra"
 doc: "https://github.com/dsincl12/migra"
 bug-reports: "https://github.com/dsincl12/migra/issues"
