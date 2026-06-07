@@ -16,7 +16,6 @@ depends: [
   "ocaml" {>= "4.14.0"}
   "dune" {>= "3.12" & >= "3.12"}
   "lwt" {>= "5.6.0"}
-  "lwt_ppx" {with-test & >= "2.1.0"}
   "alcotest" {with-test & >= "1.7.0"}
   "alcotest-lwt" {with-test & >= "1.7.0"}
   "caqti" {>= "2.0.0"}

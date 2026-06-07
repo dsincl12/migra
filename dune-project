@@ -23,7 +23,6 @@
    (ocaml (>= 4.14.0))
    (dune (>= 3.12))
    (lwt (>= 5.6.0))
-   (lwt_ppx (and :with-test (>= 2.1.0)))
    (alcotest (and :with-test (>= 1.7.0)))
    (alcotest-lwt (and :with-test (>= 1.7.0)))
    (caqti (>= 2.0.0))

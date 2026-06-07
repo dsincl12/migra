@@ -3,9 +3,7 @@
 (library
  (name test_helpers)
  (modules test_helpers)
- (libraries migra migra.engine alcotest lwt lwt.unix caqti caqti-lwt uri)
- (preprocess
-  (pps lwt_ppx)))
+ (libraries migra migra.engine alcotest lwt lwt.unix caqti caqti-lwt uri))
 
 ; Unit tests - fast, no database required
 ; Run with: dune runtest
@@ -26,9 +24,7 @@
   alcotest
   alcotest-lwt
   lwt
-  lwt.unix)
- (preprocess
-  (pps lwt_ppx)))
+  lwt.unix))
 
 ; Integration tests - require PostgreSQL, MariaDB, and SQLite
 ; Run with: dune build @runtest-integration
@@ -54,9 +50,7 @@
   lwt.unix
   caqti
   caqti-lwt
-  uri)
- (preprocess
-  (pps lwt_ppx)))
+  uri))
 
 ; Custom alias for running integration tests
 
