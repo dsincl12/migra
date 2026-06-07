@@ -30,7 +30,7 @@
    (caqti-lwt (>= 2.0.0))
    (caqti-dynload (>= 2.0.0))
    (uri (>= 4.4.0))
-   (cmdliner (>= 1.2.0))
+   (cmdliner (>= 2.0.0))
    (logs (>= 0.7.0))
    (logs-ppx (>= 0.2.0))
    (fmt (>= 0.9.0)))
