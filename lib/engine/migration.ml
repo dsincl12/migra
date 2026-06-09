@@ -2,9 +2,13 @@
 
 type t = { version : int64; description : string; file_path : string }
 
+(* Stamp versions in UTC ([gmtime]) rather than local time so the value is
+   independent of the developer's timezone and DST: two machines generating a
+   migration at the same instant agree, and a local DST shift cannot produce a
+   stamp that trips the out-of-order check against a teammate's migration. *)
 let generate_version () : int64 =
   let d = Unix.gettimeofday () in
-  let tm = Unix.localtime d in
+  let tm = Unix.gmtime d in
   let timestamp_str =
     Printf.sprintf "%04d%02d%02d%02d%02d%02d" (tm.Unix.tm_year + 1900)
       (tm.Unix.tm_mon + 1) tm.Unix.tm_mday tm.Unix.tm_hour tm.Unix.tm_min

@@ -13,7 +13,23 @@ let test_generate_version () =
   let year_str = String.sub version_str 0 4 in
   let year = int_of_string year_str in
   Alcotest.(check bool) "year is reasonable (>= 2020)" true (year >= 2020);
-  Alcotest.(check bool) "year is reasonable (< 2100)" true (year < 2100)
+  Alcotest.(check bool) "year is reasonable (< 2100)" true (year < 2100);
+
+  (* The UTC decomposition must yield in-range calendar/clock fields. *)
+  let field off = int_of_string (String.sub version_str off 2) in
+  let month = field 4 and day = field 6 in
+  let hour = field 8 and minute = field 10 and second = field 12 in
+  Alcotest.(check bool) "month in 1..12" true (month >= 1 && month <= 12);
+  Alcotest.(check bool) "day in 1..31" true (day >= 1 && day <= 31);
+  Alcotest.(check bool) "hour in 0..23" true (hour >= 0 && hour <= 23);
+  Alcotest.(check bool) "minute in 0..59" true (minute >= 0 && minute <= 59);
+  Alcotest.(check bool) "second in 0..60" true (second >= 0 && second <= 60);
+
+  (* The generated stamp round-trips through a filename. *)
+  let filename = Migra_engine.Migration.make_filename version "round_trip" in
+  Alcotest.(check int64_testable)
+    "version parses back from its filename" version
+    (get_ok (Migra_engine.Migration.parse_version filename))
 
 let test_parse_version_valid () =
   let result =
