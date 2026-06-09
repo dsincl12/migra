@@ -213,39 +213,55 @@ let run_or_error ?(on_event = no_event) (config : config) :
 let rollback ?(on_event = no_event) (config : config) strategy =
   with_initialized_db ~table:config.table config.database_url
     (fun _dialect db ->
-      Runner.rollback_targets ~table:config.table
-        ~migrations_dir:config.migrations_dir db strategy
+      (* Refuse to roll back if an applied migration was modified or its file
+       went missing: a modified file means the down SQL no longer matches what
+       was applied, and a missing file is silently dropped by target selection
+       otherwise. *)
+      Runner.validate ~table:config.table ~migrations_dir:config.migrations_dir
+        db
       >>= function
       | Error err -> Lwt.return_error err
-      | Ok to_rollback ->
-          rollback_migrations_internal ~verbose:config.verbose
-            ~table:config.table ~on_event db to_rollback
-          >>= fun results -> Lwt.return_ok (make_operation_result results))
+      | Ok () -> (
+          Runner.rollback_targets ~table:config.table
+            ~migrations_dir:config.migrations_dir db strategy
+          >>= function
+          | Error err -> Lwt.return_error err
+          | Ok to_rollback ->
+              rollback_migrations_internal ~verbose:config.verbose
+                ~table:config.table ~on_event db to_rollback
+              >>= fun results -> Lwt.return_ok (make_operation_result results)))
 
 let redo ?(on_event = no_event) ?(step = 1) (config : config) =
   with_initialized_db ~table:config.table config.database_url
     (fun _dialect db ->
-      Runner.rollback_targets ~table:config.table
-        ~migrations_dir:config.migrations_dir db (Runner.Step step)
+      (* Same drift guard as rollback/run: redo rolls back then re-applies, so a
+       modified or missing applied migration must stop it before either step. *)
+      Runner.validate ~table:config.table ~migrations_dir:config.migrations_dir
+        db
       >>= function
       | Error err -> Lwt.return_error err
-      | Ok targets -> (
-          rollback_migrations_internal ~verbose:config.verbose
-            ~table:config.table ~on_event db targets
-          >>= fun rolled_back ->
-          if List.exists (fun r -> not r.success) rolled_back then
-            (* a rollback failed: report it rather than re-applying on a bad state *)
-            Lwt.return_ok (make_operation_result rolled_back)
-          else
-            Runner.pending_migrations ~table:config.table
-              ~migrations_dir:config.migrations_dir db
-            >>= function
-            | Error err -> Lwt.return_error err
-            | Ok pending ->
-                run_migrations_internal ~verbose:config.verbose
-                  ~table:config.table ~on_event db pending
-                >>= fun results -> Lwt.return_ok (make_operation_result results)
-          ))
+      | Ok () -> (
+          Runner.rollback_targets ~table:config.table
+            ~migrations_dir:config.migrations_dir db (Runner.Step step)
+          >>= function
+          | Error err -> Lwt.return_error err
+          | Ok targets -> (
+              rollback_migrations_internal ~verbose:config.verbose
+                ~table:config.table ~on_event db targets
+              >>= fun rolled_back ->
+              if List.exists (fun r -> not r.success) rolled_back then
+                (* a rollback failed: report it rather than re-applying on a bad state *)
+                Lwt.return_ok (make_operation_result rolled_back)
+              else
+                Runner.pending_migrations ~table:config.table
+                  ~migrations_dir:config.migrations_dir db
+                >>= function
+                | Error err -> Lwt.return_error err
+                | Ok pending ->
+                    run_migrations_internal ~verbose:config.verbose
+                      ~table:config.table ~on_event db pending
+                    >>= fun results ->
+                    Lwt.return_ok (make_operation_result results))))
 
 let status (cfg : config) =
   with_initialized_db ~table:cfg.table cfg.database_url (fun dialect db ->

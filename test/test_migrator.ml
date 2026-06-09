@@ -610,6 +610,118 @@ let test_redo () =
                         "2 applied after redo" 2 st.applied_count;
                       Lwt.return_unit))))
 
+(* Finding 1: rollback must not bypass drift validation. A migration whose file
+   was modified after being applied has down SQL that no longer matches what was
+   applied, so rollback must refuse rather than run the modified down SQL. *)
+let test_rollback_rejects_checksum_drift () =
+  with_test_db_pooled "migrator_rollback_drift" (fun db_url ->
+      with_temp_dir "migrations" (fun migrations_dir ->
+          let v1 = 20240115120000L in
+          let _f1 =
+            create_migration_with_sections migrations_dir v1 "drift1"
+              "CREATE TABLE drift1 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE drift1;"
+          in
+          let config =
+            Migra.Migrator.make ~database_url:db_url ~migrations_dir ()
+          in
+          Migra.Migrator.run config >>= function
+          | Error err ->
+              Alcotest.fail
+                (Printf.sprintf "run failed: %s" (Migra.Types.show_error err))
+          | Ok _ -> (
+              (* Overwrite the applied file (same name, different SQL) so its
+                 checksum no longer matches the recorded one. *)
+              let _ =
+                create_migration_with_sections migrations_dir v1 "drift1"
+                  "CREATE TABLE drift1 (id SERIAL PRIMARY KEY, extra TEXT);"
+                  "DROP TABLE drift1;"
+              in
+              Migra.Migrator.rollback config All >>= function
+              | Ok _ ->
+                  Alcotest.fail
+                    "rollback should refuse a modified applied migration"
+              | Error
+                  (Migra.Types.MigrationError
+                     (Migra.Types.ChecksumMismatch (v, _))) ->
+                  Alcotest.(check int64_testable) "drift version" v1 v;
+                  Lwt.return_unit
+              | Error err ->
+                  Alcotest.fail
+                    (Printf.sprintf "expected ChecksumMismatch, got: %s"
+                       (Migra.Types.show_error err)))))
+
+(* Finding 1: rollback must not silently drop an applied migration whose file is
+   missing (target selection filters it out otherwise). It must surface drift. *)
+let test_rollback_rejects_missing_file () =
+  with_test_db_pooled "migrator_rollback_missing" (fun db_url ->
+      with_temp_dir "migrations" (fun migrations_dir ->
+          let v1 = 20240115120000L in
+          let f1 =
+            create_migration_with_sections migrations_dir v1 "missing1"
+              "CREATE TABLE missing1 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE missing1;"
+          in
+          let config =
+            Migra.Migrator.make ~database_url:db_url ~migrations_dir ()
+          in
+          Migra.Migrator.run config >>= function
+          | Error err ->
+              Alcotest.fail
+                (Printf.sprintf "run failed: %s" (Migra.Types.show_error err))
+          | Ok _ -> (
+              Sys.remove f1;
+              Migra.Migrator.rollback config All >>= function
+              | Ok _ ->
+                  Alcotest.fail
+                    "rollback should refuse when an applied file is missing"
+              | Error
+                  (Migra.Types.MigrationError (Migra.Types.AppliedFileMissing v))
+                ->
+                  Alcotest.(check int64_testable) "missing version" v1 v;
+                  Lwt.return_unit
+              | Error err ->
+                  Alcotest.fail
+                    (Printf.sprintf "expected AppliedFileMissing, got: %s"
+                       (Migra.Types.show_error err)))))
+
+(* Finding 1: redo (rollback + re-apply) must apply the same drift guard. *)
+let test_redo_rejects_drift () =
+  with_test_db_pooled "migrator_redo_drift" (fun db_url ->
+      with_temp_dir "migrations" (fun migrations_dir ->
+          let v1 = 20240115120000L in
+          let _f1 =
+            create_migration_with_sections migrations_dir v1 "redodrift"
+              "CREATE TABLE redodrift (id SERIAL PRIMARY KEY);"
+              "DROP TABLE redodrift;"
+          in
+          let config =
+            Migra.Migrator.make ~database_url:db_url ~migrations_dir ()
+          in
+          Migra.Migrator.run config >>= function
+          | Error err ->
+              Alcotest.fail
+                (Printf.sprintf "run failed: %s" (Migra.Types.show_error err))
+          | Ok _ -> (
+              let _ =
+                create_migration_with_sections migrations_dir v1 "redodrift"
+                  "CREATE TABLE redodrift (id SERIAL PRIMARY KEY, extra TEXT);"
+                  "DROP TABLE redodrift;"
+              in
+              Migra.Migrator.redo config >>= function
+              | Ok _ ->
+                  Alcotest.fail
+                    "redo should refuse a modified applied migration"
+              | Error
+                  (Migra.Types.MigrationError
+                     (Migra.Types.ChecksumMismatch (v, _))) ->
+                  Alcotest.(check int64_testable) "drift version" v1 v;
+                  Lwt.return_unit
+              | Error err ->
+                  Alcotest.fail
+                    (Printf.sprintf "expected ChecksumMismatch, got: %s"
+                       (Migra.Types.show_error err)))))
+
 let async_of_sync f () =
   f ();
   Lwt.return_unit
@@ -618,6 +730,11 @@ let suite =
   [
     ("make_defaults", `Quick, test_make_defaults);
     ("redo", `Quick, test_redo);
+    ("redo_rejects_drift", `Quick, test_redo_rejects_drift);
+    ( "rollback_rejects_checksum_drift",
+      `Quick,
+      test_rollback_rejects_checksum_drift );
+    ("rollback_rejects_missing_file", `Quick, test_rollback_rejects_missing_file);
     ("run_bad_url", `Quick, test_run_bad_url);
     ("run_pending", `Quick, test_run_pending);
     ("run_no_pending", `Quick, test_run_no_pending);

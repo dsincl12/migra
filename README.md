@@ -133,9 +133,10 @@ The public API is two modules:
 ## Safety & validation
 
 - Checksums. When a migration is applied, a checksum of its file is stored.
-  `migrate` re-validates applied migrations first and refuses to run if a file
-  was modified after being applied, has gone missing, or a new migration is
-  older than the latest applied one.
+  `migrate`, `rollback`, and `redo` re-validate applied migrations first and
+  refuse to run if an applied file was modified after being applied or has gone
+  missing; `migrate` additionally refuses a new migration that is older than the
+  latest applied one.
 - Transactions. On PostgreSQL and SQLite, migrations (including DDL) are
   fully transactional. **On MySQL/MariaDB, DDL statements implicitly commit and
   cannot be rolled back** - this is a server limitation, so keep MySQL/MariaDB

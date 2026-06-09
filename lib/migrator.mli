@@ -139,6 +139,11 @@ val rollback :
     [Error] means the rollback could not be started; a failed down-migration
     surfaces as [Ok] with [failure_count > 0] (see {!succeeded}).
 
+    Like {!run}, applied migrations are validated against the files on disk
+    first: an [Error] is returned for drift (a modified or missing applied
+    migration file) rather than rolling back with down SQL that no longer
+    matches what was applied.
+
     @param config Migration configuration
     @param strategy Rollback strategy
     @return Operation result with per-migration outcomes *)
@@ -150,7 +155,9 @@ val redo :
   (operation_result, Types.error) Lwt_result.t
 (** Roll back the last [step] applied migrations (default 1) and re-apply all
     pending migrations. Returns the result of the re-apply; if a rollback fails,
-    returns that failing result instead and does not re-apply. *)
+    returns that failing result instead and does not re-apply. Like {!run} and
+    {!rollback}, returns [Error] for drift (a modified or missing applied
+    migration file) before rolling back or re-applying anything. *)
 
 val status : config -> (status_result, Types.error) Lwt_result.t
 (** Get current migration status.
