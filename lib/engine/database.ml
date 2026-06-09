@@ -45,6 +45,26 @@ let get_database (uri : Uri.t) : (string, Types.error) result =
                 "Could not parse database from DATABASE_URL (invalid path \
                  format)"))
 
+(** The database name for display and lifecycle messages, derived from the
+    connection URL. For PostgreSQL/MariaDB this is the URL path with its leading
+    ['/'] removed. For SQLite, whose "name" is really a filesystem path (or
+    [:memory:]), it is the path exactly as Caqti will open it, so URLs such as
+    [sqlite3:./dev.db] are accepted rather than rejected for "invalid path
+    format". *)
+let database_name (url : string) : (string, Types.error) result =
+  match Dialect.detect_from_url url with
+  | Error msg -> Error (Types.DatabaseError (Types.UrlParseError msg))
+  | Ok Dialect.SQLite ->
+      let path = Uri.path (Uri.of_string (Dialect.normalize_url url)) in
+      if String.length path = 0 then
+        Error
+          (Types.DatabaseError
+             (Types.UrlParseError
+                "Could not parse SQLite database path from URL (empty path)"))
+      else Ok path
+  | Ok (Dialect.PostgreSQL | Dialect.MariaDB) ->
+      get_database (Uri.of_string url)
+
 (** Replace the password in a connection URL with a fixed [*****] mask for safe
     display and logging. URLs without a password (or SQLite paths) are returned
     unchanged. The mask is a fixed width so it does not reveal the password

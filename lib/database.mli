@@ -9,7 +9,9 @@ val drop_database : string -> (unit, Types.error) Lwt_result.t
     database file. *)
 
 val database_name : string -> (string, Types.error) result
-(** The database name taken from a connection URL's path. *)
+(** The database name taken from a connection URL. For PostgreSQL/MariaDB this
+    is the URL path without its leading ['/']; for SQLite it is the filesystem
+    path (or [:memory:]), so [sqlite3:path] URLs are accepted. *)
 
 val get_database_url : unit -> (string, Types.error) result
 (** Read [DATABASE_URL] from the environment. *)

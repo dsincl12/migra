@@ -1,6 +1,13 @@
 val get_hostname : Uri.t -> (string, Types.error) result
 val get_port : Uri.t -> (int, Types.error) result
 val get_database : Uri.t -> (string, Types.error) result
+
+val database_name : string -> (string, Types.error) result
+(** The database name for display and lifecycle messages. For PostgreSQL/MariaDB
+    this is the URL path without its leading ['/']; for SQLite it is the
+    filesystem path (or [:memory:]) Caqti will open, so [sqlite3:path] URLs are
+    accepted. *)
+
 val get_database_url : unit -> (string, Types.error) result
 
 val redact_url : string -> string

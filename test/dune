@@ -16,7 +16,8 @@
   test_types
   test_migration
   test_discovery
-  test_dialect)
+  test_dialect
+  test_database_facade)
  (libraries
   test_helpers
   migra

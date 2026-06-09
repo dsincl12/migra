@@ -9,4 +9,5 @@ let () =
          ("SQL Parser", Test_sql_parser.suite);
          ("Types", Test_types.suite);
          ("Dialect", Test_dialect.suite);
+         ("Database facade", Test_database_facade.suite);
        ]
