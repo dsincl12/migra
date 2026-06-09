@@ -261,7 +261,8 @@ let create_temp_dir prefix =
   let timestamp = Unix.time () |> int_of_float in
   let random = Random.int 10000 in
   let dir_name =
-    Filename.concat (Filename.get_temp_dir_name ())
+    Filename.concat
+      (Filename.get_temp_dir_name ())
       (Printf.sprintf "migra_test_%s_%d_%d" prefix timestamp random)
   in
   Unix.mkdir dir_name 0o755;

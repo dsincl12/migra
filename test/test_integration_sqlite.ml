@@ -5,7 +5,8 @@ let with_sqlite_file prefix f =
   let timestamp = Unix.time () |> int_of_float in
   let random = Random.int 10000 in
   let db_file =
-    Filename.concat (Filename.get_temp_dir_name ())
+    Filename.concat
+      (Filename.get_temp_dir_name ())
       (Printf.sprintf "migra_test_%s_%d_%d.db" prefix timestamp random)
   in
   let db_url = Printf.sprintf "sqlite3://%s" db_file in
