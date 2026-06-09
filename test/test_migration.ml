@@ -263,6 +263,39 @@ let test_read_up_sql_with_file () =
 
          Lwt.return_unit))
 
+(* The combined reader returns the same up SQL as read_up_sql and the same
+   checksum as checksum, both from a single file read. *)
+let test_read_up_sql_with_checksum () =
+  Lwt_main.run
+    (with_temp_dir "migration_checksum_test" (fun dir ->
+         let filepath =
+           create_migration_with_sections dir 20240115120000L "create_users"
+             "CREATE TABLE users (id INT PRIMARY KEY);" "DROP TABLE users;"
+         in
+         let migration =
+           {
+             Migra_engine.Migration.version = 20240115120000L;
+             description = "create_users";
+             file_path = filepath;
+           }
+         in
+
+         let combined =
+           Migra_engine.Migration.read_up_sql_with_checksum migration
+         in
+         Alcotest.(check bool)
+           "read_up_sql_with_checksum succeeds" true (is_ok combined);
+         let sql, checksum = get_ok combined in
+         Alcotest.(check string)
+           "same up SQL as read_up_sql"
+           (get_ok (Migra_engine.Migration.read_up_sql migration))
+           sql;
+         Alcotest.(check string)
+           "same checksum as checksum"
+           (get_ok (Migra_engine.Migration.checksum migration))
+           checksum;
+         Lwt.return_unit))
+
 let test_read_down_sql_with_file () =
   Lwt_main.run
     (with_temp_dir "migration_read_test" (fun dir ->
@@ -436,6 +469,9 @@ let suite =
     ("compare", `Quick, async_of_sync test_compare);
     ("to_string", `Quick, async_of_sync test_to_string);
     ("read_up_sql_with_file", `Quick, async_of_sync test_read_up_sql_with_file);
+    ( "read_up_sql_with_checksum",
+      `Quick,
+      async_of_sync test_read_up_sql_with_checksum );
     ( "read_down_sql_with_file",
       `Quick,
       async_of_sync test_read_down_sql_with_file );

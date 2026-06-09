@@ -22,6 +22,11 @@ val read_down_sql : t -> (string, Types.error) result
 (** Read the down migration SQL from a migration file. Parses the content
     between [-- +migrate down] and the next section marker. *)
 
+val read_up_sql_with_checksum : t -> (string * string, Types.error) result
+(** Read the file once and return [(up_sql, checksum)] - the "up" section's SQL
+    together with the MD5 checksum of the whole file. Used by apply so the
+    checksum and the executed SQL are taken from the same read. *)
+
 val checksum : t -> (string, Types.error) result
 (** MD5 checksum (hex) of the migration file's full contents, for detecting
     whether a migration was modified after being applied. *)

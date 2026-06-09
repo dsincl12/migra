@@ -129,30 +129,51 @@ let parse_section (content : string) (section : string) : string option =
 
       Some (String.trim joined)
 
+(** Extract a named section's SQL from already-read [content], erroring if it is
+    missing or empty. Factored out so callers that already hold the file
+    contents (e.g. {!read_up_sql_with_checksum}) need not read the file again.
+*)
+let section_sql_of_content (migration : t) (content : string) (section : string)
+    : (string, Types.error) result =
+  match parse_section content section with
+  | None ->
+      Error
+        (Types.MigrationError
+           (Types.MissingSection (migration.file_path, section)))
+  | Some sql ->
+      if String.trim sql = "" then
+        Error
+          (Types.MigrationError
+             (Types.EmptySection (migration.file_path, section)))
+      else Ok sql
+
 (** Read a named section's SQL ("up"/"down"), erroring if it is missing or
     empty. *)
 let read_section_sql (migration : t) (section : string) :
     (string, Types.error) result =
   match read_sql migration with
   | Error e -> Error e
-  | Ok content -> (
-      match parse_section content section with
-      | None ->
-          Error
-            (Types.MigrationError
-               (Types.MissingSection (migration.file_path, section)))
-      | Some sql ->
-          if String.trim sql = "" then
-            Error
-              (Types.MigrationError
-                 (Types.EmptySection (migration.file_path, section)))
-          else Ok sql)
+  | Ok content -> section_sql_of_content migration content section
 
 let read_up_sql (migration : t) : (string, Types.error) result =
   read_section_sql migration "up"
 
 let read_down_sql (migration : t) : (string, Types.error) result =
   read_section_sql migration "down"
+
+(** Read the file once and return both the "up" section's SQL and the checksum
+    of the whole file. Apply uses this so the recorded checksum and the SQL it
+    runs come from a single read, closing the window where the file could change
+    between computing the checksum and reading the section. *)
+let read_up_sql_with_checksum (migration : t) :
+    (string * string, Types.error) result =
+  match read_sql migration with
+  | Error e -> Error e
+  | Ok content -> (
+      let checksum = Digest.to_hex (Digest.string content) in
+      match section_sql_of_content migration content "up" with
+      | Error e -> Error e
+      | Ok sql -> Ok (sql, checksum))
 
 let make_filename (version : int64) (description : string) : string =
   Printf.sprintf "%Ld_%s.sql" version description

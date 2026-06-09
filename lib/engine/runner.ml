@@ -333,14 +333,17 @@ let run_in_transaction ?(verbose = false)
                       Lwt.return (Success migration)))))
 
 (** Execute a migration's up SQL within a transaction, recording the version and
-    its checksum. The checksum is computed up front so a file-read error fails
-    before any transaction is started. *)
+    its checksum. The file is read once up front - yielding both the checksum
+    and the SQL to run - so a file-read error fails before any transaction is
+    started and the recorded checksum matches exactly the SQL that was executed.
+*)
 let run_migration ?(verbose = false) ?(table = default_table)
     (db : Types.db_conn) (migration : Migration.t) : execution_result Lwt.t =
-  match Migration.checksum migration with
+  match Migration.read_up_sql_with_checksum migration with
   | Error err -> Lwt.return (Failure (migration, err))
-  | Ok checksum ->
-      run_in_transaction ~verbose ~read_sql:Migration.read_up_sql
+  | Ok (up_sql, checksum) ->
+      run_in_transaction ~verbose
+        ~read_sql:(fun _ -> Ok up_sql)
         ~record:(fun db version ->
           add_migration ~table db version (Some checksum))
         ~action:"migration" db migration
