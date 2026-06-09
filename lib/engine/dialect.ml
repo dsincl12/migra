@@ -85,16 +85,21 @@ module SQLite_dialect : DIALECT = struct
   let timestamp_to_string col = col
 end
 
-(** Normalize database URL for Caqti compatibility
+(** Normalize a database URL to what the Caqti drivers expect.
 
-    SQLite: caqti-driver-sqlite3 expects sqlite3:path (single colon), not
-    sqlite3://path We accept both formats for user convenience but normalize to
-    what Caqti expects. *)
+    - SQLite: caqti-driver-sqlite3 expects [sqlite3:path] (single colon), not
+      [sqlite3://path]. We accept both for convenience and normalize to the
+      former.
+    - MySQL: caqti-driver-mariadb registers only the [mariadb] scheme, so a
+      [mysql://] URL (accepted as an alias by {!detect_from_url}) is rewritten
+      to [mariadb://]; without this it would fail to find a driver. *)
 let normalize_url (url : string) : string =
-  let prefix = "sqlite3://" in
-  if String.starts_with ~prefix url then
-    let n = String.length prefix in
+  if String.starts_with ~prefix:"sqlite3://" url then
+    let n = String.length "sqlite3://" in
     "sqlite3:" ^ String.sub url n (String.length url - n)
+  else if String.starts_with ~prefix:"mysql://" url then
+    let n = String.length "mysql://" in
+    "mariadb://" ^ String.sub url n (String.length url - n)
   else url
 
 let detect_from_url (url : string) : (t, string) result =

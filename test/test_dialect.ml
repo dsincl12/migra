@@ -201,6 +201,24 @@ let test_sqlite_dialect_sql () =
   Alcotest.(check string)
     "timestamp doesn't need casting" "created_at" timestamp_sql
 
+let test_normalize_url () =
+  Alcotest.(check string)
+    "sqlite3:// becomes single-colon" "sqlite3:./dev.db"
+    (Migra_engine.Dialect.normalize_url "sqlite3://./dev.db");
+  Alcotest.(check string)
+    "sqlite3: single-colon is left untouched" "sqlite3:./dev.db"
+    (Migra_engine.Dialect.normalize_url "sqlite3:./dev.db");
+  (* mysql:// is an accepted alias but the Caqti driver only knows mariadb. *)
+  Alcotest.(check string)
+    "mysql:// becomes mariadb://" "mariadb://root@localhost:3306/app"
+    (Migra_engine.Dialect.normalize_url "mysql://root@localhost:3306/app");
+  Alcotest.(check string)
+    "mariadb:// is left untouched" "mariadb://root@localhost:3306/app"
+    (Migra_engine.Dialect.normalize_url "mariadb://root@localhost:3306/app");
+  Alcotest.(check string)
+    "postgresql:// is left untouched" "postgresql://localhost/db"
+    (Migra_engine.Dialect.normalize_url "postgresql://localhost/db")
+
 let async_of_sync f () =
   f ();
   Lwt.return_unit
@@ -216,4 +234,5 @@ let suite =
     ("postgresql_dialect_sql", `Quick, async_of_sync test_postgresql_dialect_sql);
     ("identifier_quoting", `Quick, async_of_sync test_identifier_quoting);
     ("sqlite_dialect_sql", `Quick, async_of_sync test_sqlite_dialect_sql);
+    ("normalize_url", `Quick, async_of_sync test_normalize_url);
   ]

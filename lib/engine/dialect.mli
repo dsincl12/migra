@@ -47,11 +47,12 @@ module MariaDB_dialect : DIALECT
 module SQLite_dialect : DIALECT
 
 val normalize_url : string -> string
-(** Normalize database URL for Caqti compatibility
+(** Normalize a database URL to what the Caqti drivers expect.
 
-    SQLite: caqti-driver-sqlite3 expects sqlite3:path (single colon), not
-    sqlite3://path We accept both formats for user convenience but normalize to
-    what Caqti expects.
+    - SQLite: rewrites [sqlite3://path] to [sqlite3:path] (the single-colon form
+      caqti-driver-sqlite3 expects).
+    - MySQL: rewrites [mysql://...] to [mariadb://...] because
+      caqti-driver-mariadb registers only the [mariadb] scheme.
 
     @param url Database URL
     @return Normalized URL *)
