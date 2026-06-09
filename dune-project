@@ -18,7 +18,7 @@
 
 (package
  (name migra)
- (synopsis "A database migration tool for OCaml supporting PostgreSQL, MariaDB, and SQLite")
+ (synopsis "A database migration tool and library for OCaml supporting PostgreSQL, MariaDB/MySQL, and SQLite")
  (description
   "A database migration tool and library for OCaml. Migrations are plain SQL with up and down sections, and the database (PostgreSQL, MariaDB/MySQL, or SQLite) is selected from the connection URL. Applied migrations are tracked with checksums, and drift (a modified, missing, or out-of-order migration) is detected before anything runs. It can be used from the command line or embedded as a library to migrate on application startup.")
  (depends
