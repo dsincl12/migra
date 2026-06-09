@@ -1,57 +1,66 @@
 # Migra Test Suite
 
-The test suite is split into **unit tests** and **integration tests** for fast feedback during development.
+The test suite is split into **unit tests** and **integration tests** for fast
+feedback during development.
+
+For the full local setup (database services, ports, environment variables), see
+[../docs/TESTING_LOCALLY.md](../docs/TESTING_LOCALLY.md) - it is the source of
+truth for how to run the integration suite. This file just describes how the
+tests are organized.
 
 ## Running Tests
 
-### Unit Tests (Fast - No Database Required)
+### Unit tests (fast - no database required)
 
 ```bash
 dune runtest
 ```
 
-Runs in ~0.01 seconds. Includes:
-- SQL Parser tests
-- Type conversion tests
-- Migration filename parsing
-- File discovery logic
+Pure logic only: SQL splitting, error rendering, filename parsing, file
+discovery, dialect/URL handling, and the public URL helpers. No database needed.
 
-### Integration Tests (Requires PostgreSQL)
+### Integration tests (require PostgreSQL, MariaDB, and SQLite)
 
 ```bash
 dune build @runtest-integration
 ```
 
-Runs in ~2 seconds. Includes:
-- Database operations
-- Migration execution
-- Schema management
-- End-to-end workflows
+These exercise real databases. SQLite needs nothing; PostgreSQL is selected via
+`DATABASE_URL` and MariaDB via `MARIADB_URL`. The exact URLs and a
+`docker-compose.yml` that brings both servers up are documented in
+[../docs/TESTING_LOCALLY.md](../docs/TESTING_LOCALLY.md). The suite creates and
+drops its own throwaway databases on those servers.
 
-Requires PostgreSQL running and accessible via `DATABASE_URL` environment variable or default connection (`postgresql://localhost:5432/postgres`).
+## Test organization
 
-### All Tests
+Entry points and shared helpers:
 
-```bash
-dune runtest && dune build @runtest-integration
-```
+- `test_unit.ml` - entry point for the unit suite
+- `test_integration.ml` - entry point for the integration suite
+- `test_helpers.ml` - shared utilities and the PostgreSQL test-database pool
 
-Runs both unit and integration tests.
+Unit test modules:
 
-## Test Organization
+- `test_sql_parser.ml` - SQL statement splitter
+- `test_types.ml` - error rendering
+- `test_migration.ml` - filename parsing, sections, checksums
+- `test_discovery.ml` - migration file discovery
+- `test_dialect.ml` - dialect detection and URL normalization
+- `test_database_facade.ml` - `Migra.Database` URL helpers
 
-- `test_unit.ml` - Entry point for unit tests
-- `test_integration.ml` - Entry point for integration tests
-- `test_helpers.ml` - Shared test utilities and database pooling
-- `test_sql_parser.ml` - Pure unit tests
-- `test_types.ml` - Pure unit tests
-- `test_migration.ml` - Pure unit tests (filename parsing)
-- `test_discovery.ml` - Pure unit tests (file discovery)
-- `test_database.ml` - Integration tests (DB operations)
-- `test_runner.ml` - Integration tests (migration execution)
-- `test_schema_integration.ml` - Integration tests (schema management)
-- `test_e2e.ml` - Integration tests (end-to-end workflows)
+Integration test modules:
 
-## Database Pooling
+- `test_database.ml` - database create/drop and connection handling
+- `test_runner.ml` - migration execution against a real database
+- `test_schema_integration.ml` - the `schema_migrations` table
+- `test_migrator.ml` - the `Migra.Migrator` facade
+- `test_e2e.ml` - multi-migration workflows through the runner
+- `test_integration_sqlite.ml` - SQLite-specific behavior
+- `test_integration_mariadb.ml` - MariaDB-specific behavior
 
-Integration tests use a pool of 3 databases that are reused across tests. Each test gets a clean slate by dropping all tables between runs. This is **~40x faster** than creating/dropping databases for each test.
+## Database pooling
+
+The integration suite reuses a small pool of PostgreSQL databases, giving each
+test a clean slate by dropping all tables between runs instead of
+creating/dropping a database per test. The pooled databases are dropped when the
+run finishes.
