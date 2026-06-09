@@ -138,10 +138,23 @@ The public API is two modules:
   missing; `migrate` additionally refuses a new migration that is older than the
   latest applied one. `status` does not fail on drift - it lists a missing
   applied file as `(migration file missing)` so the drift is visible.
-- Transactions. On PostgreSQL and SQLite, migrations (including DDL) are
-  fully transactional. **On MySQL/MariaDB, DDL statements implicitly commit and
-  cannot be rolled back** - this is a server limitation, so keep MySQL/MariaDB
-  migrations to a single DDL change each.
+- Transactions. Each migration runs inside a single transaction (`BEGIN` -> run
+  its SQL -> record it -> `COMMIT`), so on PostgreSQL and SQLite a failure rolls
+  the whole migration back and nothing is recorded. Three caveats where that
+  all-or-nothing guarantee does not fully hold:
+  - **MySQL/MariaDB DDL implicitly commits and cannot be rolled back** - a
+    server limitation, so keep each MySQL/MariaDB migration to a single DDL
+    change. A multi-statement DDL migration that fails partway can leave earlier
+    statements applied with no `schema_migrations` row.
+  - **Do not put your own `BEGIN`/`COMMIT`/`ROLLBACK` (or `START TRANSACTION`)
+    in a migration.** The statements pass through untouched, so a `COMMIT` in
+    your SQL ends Migra's wrapping transaction early and breaks the rollback
+    guarantee.
+  - **On PostgreSQL, a statement that returns rows fails.** Each statement is
+    executed expecting no result set, which the PostgreSQL driver enforces, so a
+    bare `SELECT setval(...)` errors (and rolls the migration back). Wrap such
+    calls so they return nothing, e.g. `DO $$ BEGIN PERFORM setval(...); END
+    $$;`.
 
 ## Development
 

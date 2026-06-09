@@ -250,6 +250,12 @@ let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) :
     -> run SQL -> update table -> COMMIT, and any failure rolls the transaction
     back so nothing is recorded.
 
+    The rollback guarantee holds on PostgreSQL and SQLite but is subject to
+    known per-dialect limits (see the Transactions notes in the README):
+    MySQL/MariaDB DDL implicitly commits, a [COMMIT]/[BEGIN] inside the
+    migration's own SQL ends this transaction early, and PostgreSQL rejects
+    statements that return rows.
+
     File-read errors return [Failure] immediately, before any transaction. *)
 let run_in_transaction ?(verbose = false)
     ~(read_sql : Migration.t -> (string, Types.error) result)
