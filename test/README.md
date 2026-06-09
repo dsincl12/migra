@@ -54,7 +54,7 @@ Integration test modules:
 - `test_runner.ml` - migration execution against a real database
 - `test_schema_integration.ml` - the `schema_migrations` table
 - `test_migrator.ml` - the `Migra.Migrator` facade
-- `test_e2e.ml` - multi-migration workflows through the runner
+- `test_workflows.ml` - multi-migration workflows through the runner
 - `test_integration_sqlite.ml` - SQLite-specific behavior
 - `test_integration_mariadb.ml` - MariaDB-specific behavior
 

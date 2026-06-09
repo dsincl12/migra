@@ -471,9 +471,9 @@ let test_database_lifecycle () =
               Migra_engine.Database.drop_database db_url >>= fun _ ->
               Lwt.return_unit))
 
-(** E2E: a migration whose up SQL contains a dollar-quoted function body (with
-    interior semicolons and a '$') runs correctly through the splitter and the
-    literal-query execution path, and the function is actually created. *)
+(** Workflow: a migration whose up SQL contains a dollar-quoted function body
+    (with interior semicolons and a '$') runs correctly through the splitter and
+    the literal-query execution path, and the function is actually created. *)
 let test_postgres_function_migration () =
   with_test_db_pooled "e2e_pgfn" (fun db_url ->
       with_temp_dir "migrations" (fun migrations_dir ->
@@ -527,8 +527,8 @@ let test_postgres_function_migration () =
                             "literal $/; preserved" "cost $5; 100%" note;
                           Lwt.return_unit)))))
 
-(** E2E: a checksum is recorded on apply; editing an applied migration is caught
-    by [validate], while an unchanged tree validates cleanly. *)
+(** Workflow: a checksum is recorded on apply; editing an applied migration is
+    caught by [validate], while an unchanged tree validates cleanly. *)
 let test_checksum_validation () =
   with_test_db_pooled "e2e_checksum" (fun db_url ->
       with_temp_dir "migrations" (fun migrations_dir ->

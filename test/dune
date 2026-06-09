@@ -38,7 +38,7 @@
   test_runner
   test_schema_integration
   test_migrator
-  test_e2e
+  test_workflows
   test_integration_sqlite
   test_integration_mariadb)
  (libraries
