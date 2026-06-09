@@ -1,16 +1,14 @@
 type db_conn = (module Caqti_lwt.CONNECTION)
 
 type file_error =
-  | FileNotFound of string
   | InvalidFormat of string
   | ReadError of string * exn
+  | WriteError of string * exn
   | AlreadyExists of string
 
 type db_error =
   | ConnectionFailed of string * Caqti_error.t
   | QueryFailed of string * Caqti_error.t
-  | TransactionFailed of string * Caqti_error.t
-  | DatabaseNotFound of string
   | UrlParseError of string
   | ValidationError of string
 
@@ -41,10 +39,11 @@ let rec show_error = function
   | DiscoveryError msg -> Printf.sprintf "Discovery error: %s" msg
 
 and show_file_error = function
-  | FileNotFound path -> Printf.sprintf "File not found: %s" path
   | InvalidFormat msg -> Printf.sprintf "Invalid format: %s" msg
   | ReadError (path, exn) ->
       Printf.sprintf "Error reading file %s: %s" path (Printexc.to_string exn)
+  | WriteError (path, exn) ->
+      Printf.sprintf "Error writing file %s: %s" path (Printexc.to_string exn)
   | AlreadyExists path -> Printf.sprintf "File already exists: %s" path
 
 and show_db_error = function
@@ -53,10 +52,6 @@ and show_db_error = function
         (Caqti_error.show err)
   | QueryFailed (context, err) ->
       Printf.sprintf "Query failed (%s): %s" context (Caqti_error.show err)
-  | TransactionFailed (context, err) ->
-      Printf.sprintf "Transaction failed (%s): %s" context
-        (Caqti_error.show err)
-  | DatabaseNotFound name -> Printf.sprintf "Database not found: %s" name
   | UrlParseError msg -> Printf.sprintf "URL parse error: %s" msg
   | ValidationError msg -> Printf.sprintf "Validation error: %s" msg
 

@@ -1,14 +1,15 @@
 let test_show_file_error () =
   let err1 =
-    Migra.Types.FileError (Migra.Types.FileNotFound "/path/to/file.sql")
+    Migra.Types.FileError
+      (Migra.Types.WriteError ("/path/to/file.sql", Failure "disk full"))
   in
   let msg1 = Migra.Types.show_error err1 in
   Alcotest.(check bool)
     "contains file path" true
     (Test_helpers.string_contains_substring msg1 "/path/to/file.sql");
   Alcotest.(check bool)
-    "mentions not found" true
-    (Test_helpers.string_contains_substring msg1 "not found");
+    "mentions writing" true
+    (Test_helpers.string_contains_substring msg1 "writing");
 
   let err2 = Migra.Types.FileError (Migra.Types.InvalidFormat "bad format") in
   let msg2 = Migra.Types.show_error err2 in
@@ -32,14 +33,16 @@ let test_show_file_error () =
     (Test_helpers.string_contains_substring msg3 "read failed")
 
 let test_show_database_error () =
-  let err1 = Migra.Types.DatabaseError (Migra.Types.DatabaseNotFound "mydb") in
+  let err1 =
+    Migra.Types.DatabaseError (Migra.Types.ValidationError "bad table name")
+  in
   let msg1 = Migra.Types.show_error err1 in
   Alcotest.(check bool)
-    "contains database name" true
-    (Test_helpers.string_contains_substring msg1 "mydb");
+    "contains validation message" true
+    (Test_helpers.string_contains_substring msg1 "bad table name");
   Alcotest.(check bool)
-    "mentions not found" true
-    (Test_helpers.string_contains_substring msg1 "not found");
+    "mentions validation" true
+    (Test_helpers.string_contains_substring msg1 "Validation");
 
   let err2 =
     Migra.Types.DatabaseError (Migra.Types.UrlParseError "invalid URL")
@@ -102,23 +105,22 @@ let test_show_discovery_error () =
     (Test_helpers.string_contains_substring msg "Discovery")
 
 let test_migration_error_with_file_error () =
-  let file_err = Migra.Types.FileNotFound "/migrations/bad.sql" in
+  let file_err = Migra.Types.InvalidFormat "/migrations/bad.sql" in
   let mig_err = Migra.Types.MigrationError (Migra.Types.ParseError file_err) in
   let msg = Migra.Types.show_error mig_err in
   Alcotest.(check bool)
     "contains filename" true
     (Test_helpers.string_contains_substring msg "/migrations/bad.sql");
   Alcotest.(check bool)
-    "mentions not found" true
-    (Test_helpers.string_contains_substring msg "not found")
+    "mentions invalid" true
+    (Test_helpers.string_contains_substring msg "Invalid")
 
 let test_show_error_comprehensive () =
   let errors =
     [
-      Migra.Types.FileError (Migra.Types.FileNotFound "test.sql");
       Migra.Types.FileError (Migra.Types.InvalidFormat "bad");
       Migra.Types.FileError (Migra.Types.ReadError ("test.sql", Failure "err"));
-      Migra.Types.DatabaseError (Migra.Types.DatabaseNotFound "db");
+      Migra.Types.FileError (Migra.Types.WriteError ("test.sql", Failure "err"));
       Migra.Types.DatabaseError (Migra.Types.UrlParseError "msg");
       Migra.Types.DatabaseError (Migra.Types.ValidationError "msg");
       Migra.Types.MigrationError (Migra.Types.MissingSection ("f.sql", "up"));

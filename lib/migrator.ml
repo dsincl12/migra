@@ -384,8 +384,10 @@ let generate ?(migrations_dir = Discovery.default_migrations_dir)
         Error (Types.FileError (Types.AlreadyExists filepath))
       else
         try
-          let oc = open_out filepath in
-          output_string oc migration_template;
-          close_out oc;
+          (* [with_open_text] closes the channel even if writing raises, so a
+             failed write does not leak the descriptor; report it as a write (not
+             read) error. *)
+          Out_channel.with_open_text filepath (fun oc ->
+              output_string oc migration_template);
           Ok filepath
-        with e -> Error (Types.FileError (Types.ReadError (filepath, e))))
+        with e -> Error (Types.FileError (Types.WriteError (filepath, e))))

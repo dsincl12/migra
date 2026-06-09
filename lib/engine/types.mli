@@ -1,16 +1,14 @@
 type db_conn = (module Caqti_lwt.CONNECTION)
 
 type file_error =
-  | FileNotFound of string
   | InvalidFormat of string
   | ReadError of string * exn
+  | WriteError of string * exn
   | AlreadyExists of string
 
 type db_error =
   | ConnectionFailed of string * Caqti_error.t
   | QueryFailed of string * Caqti_error.t
-  | TransactionFailed of string * Caqti_error.t
-  | DatabaseNotFound of string
   | UrlParseError of string
   | ValidationError of string
 
