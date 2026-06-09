@@ -136,7 +136,8 @@ The public API is two modules:
   `migrate`, `rollback`, and `redo` re-validate applied migrations first and
   refuse to run if an applied file was modified after being applied or has gone
   missing; `migrate` additionally refuses a new migration that is older than the
-  latest applied one.
+  latest applied one. `status` does not fail on drift - it lists a missing
+  applied file as `(migration file missing)` so the drift is visible.
 - Transactions. On PostgreSQL and SQLite, migrations (including DDL) are
   fully transactional. **On MySQL/MariaDB, DDL statements implicitly commit and
   cannot be rolled back** - this is a server limitation, so keep MySQL/MariaDB

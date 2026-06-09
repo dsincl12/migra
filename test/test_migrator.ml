@@ -722,6 +722,57 @@ let test_redo_rejects_drift () =
                     (Printf.sprintf "expected ChecksumMismatch, got: %s"
                        (Migra.Types.show_error err)))))
 
+(* Finding 2: status must surface an applied row whose file is gone rather than
+   hiding it (which would understate the applied count). *)
+let test_status_includes_missing_file () =
+  with_test_db_pooled "migrator_status_missing" (fun db_url ->
+      with_temp_dir "migrations" (fun migrations_dir ->
+          let v1 = 20240115120000L in
+          let v2 = 20240115130000L in
+          let f1 =
+            create_migration_with_sections migrations_dir v1 "smiss1"
+              "CREATE TABLE smiss1 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE smiss1;"
+          in
+          let _f2 =
+            create_migration_with_sections migrations_dir v2 "smiss2"
+              "CREATE TABLE smiss2 (id SERIAL PRIMARY KEY);"
+              "DROP TABLE smiss2;"
+          in
+          let config =
+            Migra.Migrator.make ~database_url:db_url ~migrations_dir ()
+          in
+          Migra.Migrator.run config >>= function
+          | Error err ->
+              Alcotest.fail
+                (Printf.sprintf "run failed: %s" (Migra.Types.show_error err))
+          | Ok _ -> (
+              (* Delete the first applied migration's file. *)
+              Sys.remove f1;
+              Migra.Migrator.status config >>= function
+              | Error err ->
+                  Alcotest.fail
+                    (Printf.sprintf "status failed: %s"
+                       (Migra.Types.show_error err))
+              | Ok st ->
+                  Alcotest.(check int)
+                    "both rows still counted applied" 2 st.applied_count;
+                  Alcotest.(check int) "no pending" 0 st.pending_count;
+                  Alcotest.(check int)
+                    "two rows listed" 2
+                    (List.length st.migrations);
+                  let s1 =
+                    List.find
+                      (fun s -> Int64.equal s.Migra.Migrator.version v1)
+                      st.migrations
+                  in
+                  Alcotest.(check bool)
+                    "missing-file row still applied" true s1.applied;
+                  Alcotest.(check string)
+                    "missing-file row is labelled" "(migration file missing)"
+                    s1.description;
+                  Lwt.return_unit)))
+
 let async_of_sync f () =
   f ();
   Lwt.return_unit
@@ -747,4 +798,5 @@ let suite =
     ("rollback_empty", `Quick, test_rollback_empty);
     ("status", `Quick, test_status);
     ("status_mixed", `Quick, test_status_mixed);
+    ("status_includes_missing_file", `Quick, test_status_includes_missing_file);
   ]

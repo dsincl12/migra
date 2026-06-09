@@ -163,7 +163,10 @@ val status : config -> (status_result, Types.error) Lwt_result.t
 (** Get current migration status.
 
     Returns information about all migrations (applied and pending) with
-    timestamps for applied migrations.
+    timestamps for applied migrations. A migration recorded as applied whose
+    file is no longer on disk is still included (counted as applied, described
+    as ["(migration file missing)"]) so the drift is visible rather than
+    silently understating the applied count.
 
     @param config Migration configuration
     @return Status result with all migrations *)

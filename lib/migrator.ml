@@ -284,7 +284,7 @@ let status (cfg : config) =
           match Discovery.find_migrations ~dir:cfg.migrations_dir () with
           | Error err -> Lwt.return_error err
           | Ok migrations ->
-              let statuses =
+              let on_disk_statuses =
                 List.map
                   (fun m ->
                     let applied =
@@ -302,6 +302,38 @@ let status (cfg : config) =
                       applied_at;
                     })
                   migrations
+              in
+
+              (* Surface drift: a row recorded as applied whose file is no longer
+                 on disk would otherwise vanish from the status listing,
+                 understating the applied count. Include it explicitly. *)
+              let on_disk_versions =
+                Discovery.applied_set_of_list
+                  (List.map (fun m -> m.Migration.version) migrations)
+              in
+              let missing_file_statuses =
+                List.filter_map
+                  (fun record ->
+                    if
+                      Discovery.Int64Set.mem record.Runner.version
+                        on_disk_versions
+                    then None
+                    else
+                      Some
+                        {
+                          version = record.Runner.version;
+                          description = "(migration file missing)";
+                          applied = true;
+                          applied_at =
+                            List.assoc_opt record.Runner.version applied_map;
+                        })
+                  applied_records
+              in
+
+              let statuses =
+                List.sort
+                  (fun a b -> Int64.compare a.version b.version)
+                  (on_disk_statuses @ missing_file_statuses)
               in
 
               let pending_count =
