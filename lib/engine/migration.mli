@@ -10,8 +10,9 @@ val from_file : string -> (t, Types.error) result
 
 val parse_section : string -> string -> string option
 (** Parse a section from migration file content. Extracts content between a
-    section marker (e.g., "-- +migrate up") and the next section. Section
-    matching is case-insensitive. *)
+    section marker (e.g., "-- +migrate up") and the next section. The marker is
+    matched exactly (after trimming each line), so the section name is
+    case-sensitive. *)
 
 val read_up_sql : t -> (string, Types.error) result
 (** Read the up migration SQL from a migration file. Parses the content between

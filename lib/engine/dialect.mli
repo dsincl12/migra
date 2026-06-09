@@ -11,12 +11,12 @@ module type DIALECT = sig
       - SQLite: None (file-based, no admin DB) *)
 
   val database_exists_sql : string
-  (** SQL to check if database exists Returns query string with one parameter
-      placeholder
+  (** SQL that checks whether a database exists, returning a single boolean and
+      taking the database name as its one parameter placeholder.
       - PostgreSQL: SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)
-      - MariaDB: SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE
-        SCHEMA_NAME = ?
-      - SQLite: "" (N/A - use file system check instead) *)
+      - MariaDB: SELECT EXISTS(SELECT 1 FROM information_schema.SCHEMATA WHERE
+        SCHEMA_NAME = ?)
+      - SQLite: "" (N/A - use a file system check instead) *)
 
   val create_database_sql : string -> string
   (** Generate SQL to create database
