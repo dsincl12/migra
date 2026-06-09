@@ -1,0 +1,9 @@
+; CLI cram tests. They drive the installed `migra` binary against a SQLite
+; database, so they need caqti-driver-sqlite3 (an optional dependency) but no
+; database server. They are opt-in - set MIGRA_CLI_TEST=1 - so the default
+; `dune runtest` stays free of any driver requirement.
+
+(cram
+ (enabled_if
+  (= %{env:MIGRA_CLI_TEST=0} 1))
+ (deps %{bin:migra}))
