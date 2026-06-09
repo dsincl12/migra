@@ -14,6 +14,11 @@ val redact_url : string -> string
 (** Replace the password in a connection URL with a fixed [*****] mask for safe
     display (does not reveal the password length). *)
 
+val is_missing_driver_error : string -> bool
+(** Whether a Caqti error message indicates the database driver for the URL's
+    scheme is not installed (as opposed to a connection failure that merely
+    mentions something "not found"). Exposed for testing. *)
+
 val connect_db : string -> (Types.db_conn, Types.error) result Lwt.t
 (** Connect to database using connection string. Returns a single connection
     (use for one-off operations or transactions). *)

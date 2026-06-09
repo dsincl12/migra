@@ -54,6 +54,20 @@ let test_redact_url () =
     "sqlite path is left untouched" "sqlite3:./dev.db"
     (Migra.Database.redact_url "sqlite3:./dev.db")
 
+(* Only a genuine missing-driver error should be rewritten into install
+   instructions; a connection failure that merely says "not found" must not. *)
+let test_is_missing_driver_error () =
+  let check expected msg =
+    Alcotest.(check bool)
+      msg expected
+      (Migra_engine.Database.is_missing_driver_error msg)
+  in
+  check true "Caqti failed to find a suitable driver for the URI";
+  check true "no driver found for scheme mariadb: shared library not found";
+  check false "FATAL: database \"app\" does not exist";
+  check false "could not translate host name \"db\" to address: not found";
+  check false "FATAL: role \"app\" not found"
+
 let async_of_sync f () =
   f ();
   Lwt.return_unit
@@ -66,4 +80,7 @@ let suite =
       `Quick,
       async_of_sync test_database_name_unsupported );
     ("redact_url", `Quick, async_of_sync test_redact_url);
+    ( "is_missing_driver_error",
+      `Quick,
+      async_of_sync test_is_missing_driver_error );
   ]

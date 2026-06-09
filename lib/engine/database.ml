@@ -113,9 +113,14 @@ let string_contains (haystack : string) (needle : string) : bool =
     in
     loop 0
 
+(** Whether [err_msg] is Caqti's "no driver installed for this scheme" error, as
+    opposed to a connection-time failure that merely happens to contain "not
+    found" (a missing host, role, or database). We require the word "driver" so
+    a bare "not found" no longer masquerades as a missing-driver error and
+    replaces the real message with install instructions. *)
 let is_missing_driver_error (err_msg : string) : bool =
   string_contains err_msg "suitable driver"
-  || string_contains err_msg "not found"
+  || (string_contains err_msg "driver" && string_contains err_msg "not found")
 
 (** Build a helpful "driver not installed" message for [database_url]'s scheme.
     Assumes the failure is a missing-driver error (see
