@@ -126,29 +126,45 @@ let reset migrations_dir table verbose database_url =
 let rollback migrations_dir table step to_version all dry_run verbose
     database_url =
   let cfg = config ~migrations_dir ~table ~verbose database_url in
-  let strategy =
-    if all then Migrator.All
-    else
-      match to_version with
-      | Some target -> Migrator.To target
-      | None -> Migrator.Step (Option.value step ~default:1)
+  (* Reject mutually exclusive selectors rather than silently letting one win
+     (--all over --to over --step), which would quietly ignore what the user
+     asked for. *)
+  let conflict =
+    match (all, to_version, step) with
+    | true, Some _, _ | true, _, Some _ ->
+        Some "--all cannot be combined with --to or --step"
+    | false, Some _, Some _ -> Some "--to cannot be combined with --step"
+    | _ -> None
   in
-  if dry_run then
-    Migrator.rollback_plan cfg strategy >>= function
-    | Error err -> fail_error err
-    | Ok [] ->
-        Lwt_io.printl "No migrations to rollback" >>= fun () -> Lwt.return 0
-    | Ok plan ->
-        (* show them in the order they would be rolled back (newest first) *)
-        let ordered = List.sort (fun (a, _) (b, _) -> Int64.compare b a) plan in
-        print_plan "roll back" ordered
-  else
-    Migrator.rollback ~on_event:print_event cfg strategy >>= function
-    | Error err -> fail_error err
-    | Ok r ->
-        if r.Migrator.migrations = [] then
-          Lwt_io.printl "No migrations to rollback" >>= fun () -> Lwt.return 0
-        else Lwt.return (code_of_result r)
+  match conflict with
+  | Some msg -> Lwt_io.eprintlf "Error: %s" msg >>= fun () -> Lwt.return 1
+  | None -> (
+      let strategy =
+        if all then Migrator.All
+        else
+          match to_version with
+          | Some target -> Migrator.To target
+          | None -> Migrator.Step (Option.value step ~default:1)
+      in
+      if dry_run then
+        Migrator.rollback_plan cfg strategy >>= function
+        | Error err -> fail_error err
+        | Ok [] ->
+            Lwt_io.printl "No migrations to rollback" >>= fun () -> Lwt.return 0
+        | Ok plan ->
+            (* show them in the order they would be rolled back (newest first) *)
+            let ordered =
+              List.sort (fun (a, _) (b, _) -> Int64.compare b a) plan
+            in
+            print_plan "roll back" ordered
+      else
+        Migrator.rollback ~on_event:print_event cfg strategy >>= function
+        | Error err -> fail_error err
+        | Ok r ->
+            if r.Migrator.migrations = [] then
+              Lwt_io.printl "No migrations to rollback" >>= fun () ->
+              Lwt.return 0
+            else Lwt.return (code_of_result r))
 
 let redo migrations_dir table step verbose database_url =
   let cfg = config ~migrations_dir ~table ~verbose database_url in
