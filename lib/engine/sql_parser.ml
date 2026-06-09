@@ -4,13 +4,19 @@ type state =
   | Normal
   | Line_comment (* -- ... until newline *)
   | Block_comment of int (* /* ... */, [n] = nesting depth >= 1 *)
-  | Single_quote (* '...' *)
+  | Single_quote of bool (* '...'; [true] = backslash escapes active *)
   | Double_quote (* "..." *)
   | Backtick (* `...` *)
   | Dollar_quote of string (* $tag$ ... $tag$; tag includes the surrounding $ *)
 
 let is_space c = c = ' ' || c = '\t' || c = '\n' || c = '\r'
 let is_blank c = c = ' ' || c = '\t'
+
+let is_ident_char c =
+  (c >= 'a' && c <= 'z')
+  || (c >= 'A' && c <= 'Z')
+  || (c >= '0' && c <= '9')
+  || c = '_'
 
 let split_sql ?(backslash_escapes = false) ?(allow_delimiter = false)
     (sql : string) : string list =
@@ -29,21 +35,26 @@ let split_sql ?(backslash_escapes = false) ?(allow_delimiter = false)
 
   let char_at i = if i < n then sql.[i] else '\000' in
 
-  (* Dollar-quote tag ($ [A-Za-z0-9_]* $) starting at [i], else None. *)
+  (* Dollar-quote tag starting at [i]: [$$] (empty tag) or [$tag$] where [tag]
+     follows identifier rules - so it cannot start with a digit. Rejecting a
+     digit-leading tag stops a placeholder-like ["$1$"] from being mistaken for
+     an opening dollar-quote. *)
   let read_dollar_tag i =
-    let j = ref (i + 1) in
-    while
-      !j < n
+    if i + 1 < n && sql.[i + 1] = '$' then Some ("$$", i + 2)
+    else if
+      i + 1 < n
       &&
-      let c = sql.[!j] in
-      (c >= 'a' && c <= 'z')
-      || (c >= 'A' && c <= 'Z')
-      || (c >= '0' && c <= '9')
-      || c = '_'
-    do
-      incr j
-    done;
-    if !j < n && sql.[!j] = '$' then Some (String.sub sql i (!j - i + 1), !j + 1)
+      let c = sql.[i + 1] in
+      (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c = '_'
+    then begin
+      let j = ref (i + 2) in
+      while !j < n && is_ident_char sql.[!j] do
+        incr j
+      done;
+      if !j < n && sql.[!j] = '$' then
+        Some (String.sub sql i (!j - i + 1), !j + 1)
+      else None
+    end
     else None
   in
 
@@ -114,7 +125,18 @@ let split_sql ?(backslash_escapes = false) ?(allow_delimiter = false)
               else if c = '\'' then (
                 Buffer.add_char buf c;
                 has_content := true;
-                scan Single_quote delim false (i + 1))
+                (* A PostgreSQL escape string [E'...'] (or lowercase [e'...'])
+                   uses backslash escapes even when the dialect otherwise does
+                   not. Detect the [E] only at a word boundary so it is not the
+                   tail of an identifier. *)
+                let e_prefixed =
+                  i >= 1
+                  && (sql.[i - 1] = 'E' || sql.[i - 1] = 'e')
+                  && (i < 2 || not (is_ident_char sql.[i - 2]))
+                in
+                scan
+                  (Single_quote (backslash_escapes || e_prefixed))
+                  delim false (i + 1))
               else if c = '"' then (
                 Buffer.add_char buf c;
                 has_content := true;
@@ -153,23 +175,30 @@ let split_sql ?(backslash_escapes = false) ?(allow_delimiter = false)
           else (
             Buffer.add_char buf c;
             scan (Block_comment depth) delim false (i + 1))
-      | Single_quote ->
-          if backslash_escapes && c = '\\' && i + 1 < n then (
+      | Single_quote esc ->
+          if esc && c = '\\' && i + 1 < n then (
             Buffer.add_char buf c;
             Buffer.add_char buf (char_at (i + 1));
-            scan Single_quote delim false (i + 2))
+            scan (Single_quote esc) delim false (i + 2))
           else if c = '\'' then
             if char_at (i + 1) = '\'' then (
               Buffer.add_string buf "''";
-              scan Single_quote delim false (i + 2))
+              scan (Single_quote esc) delim false (i + 2))
             else (
               Buffer.add_char buf c;
               scan Normal delim false (i + 1))
           else (
             Buffer.add_char buf c;
-            scan Single_quote delim false (i + 1))
+            scan (Single_quote esc) delim false (i + 1))
       | Double_quote ->
-          if c = '"' then
+          (* MySQL/MariaDB allow backslash escapes inside double-quoted strings
+             (which it also treats as string literals); honor them so an escaped
+             quote does not end the string early. *)
+          if backslash_escapes && c = '\\' && i + 1 < n then (
+            Buffer.add_char buf c;
+            Buffer.add_char buf (char_at (i + 1));
+            scan Double_quote delim false (i + 2))
+          else if c = '"' then
             if char_at (i + 1) = '"' then (
               Buffer.add_string buf "\"\"";
               scan Double_quote delim false (i + 2))

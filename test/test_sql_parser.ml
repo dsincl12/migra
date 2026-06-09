@@ -207,6 +207,34 @@ let test_split_sql_delimiter_ignored_by_default () =
   Alcotest.(check string)
     "first statement unchanged" "delimiter_count := 1" (List.nth statements 0)
 
+(* A digit-leading "$1$" is not a valid PostgreSQL dollar-quote tag, so it must
+   not open a dollar-quoted body that swallows the following semicolons. *)
+let test_split_sql_dollar_digit_not_a_quote () =
+  let sql = "SELECT $1$ AS x; SELECT 2;" in
+  let statements = Migra_engine.Sql_parser.split_sql sql in
+  Alcotest.(check int) "2 statements" 2 (List.length statements);
+  Alcotest.(check string) "second statement" "SELECT 2" (List.nth statements 1)
+
+(* A PostgreSQL escape string E'...' uses backslash escapes even on a dialect
+   that otherwise does not, so an escaped quote and an interior ';' stay in the
+   string instead of ending it. *)
+let test_split_sql_pg_escape_string () =
+  let sql = "SELECT E'semi;colon\\'s' AS x; SELECT 2;" in
+  let statements = Migra_engine.Sql_parser.split_sql sql in
+  Alcotest.(check int)
+    "2 statements (E'...' keeps the semicolon)" 2 (List.length statements);
+  Alcotest.(check string) "second statement" "SELECT 2" (List.nth statements 1)
+
+(* MySQL/MariaDB honor backslash escapes inside double-quoted strings, so an
+   escaped double-quote does not end the string early. *)
+let test_split_sql_mysql_double_quote_backslash () =
+  let sql = "SELECT \"a\\\"; b\" FROM t;" in
+  let statements =
+    Migra_engine.Sql_parser.split_sql ~backslash_escapes:true sql
+  in
+  Alcotest.(check int)
+    "1 statement (escaped quote in string)" 1 (List.length statements)
+
 let async_of_sync f () =
   f ();
   Lwt.return_unit
@@ -274,4 +302,13 @@ let suite =
     ( "split_sql_delimiter_ignored_by_default",
       `Quick,
       async_of_sync test_split_sql_delimiter_ignored_by_default );
+    ( "split_sql_dollar_digit_not_a_quote",
+      `Quick,
+      async_of_sync test_split_sql_dollar_digit_not_a_quote );
+    ( "split_sql_pg_escape_string",
+      `Quick,
+      async_of_sync test_split_sql_pg_escape_string );
+    ( "split_sql_mysql_double_quote_backslash",
+      `Quick,
+      async_of_sync test_split_sql_mysql_double_quote_backslash );
   ]
