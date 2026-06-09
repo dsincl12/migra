@@ -92,7 +92,7 @@ module TestDbPool = struct
 
         Db.exec drop_tables_query () >>= fun _ -> Lwt.return_unit
 
-  let rec acquire_with_retry prefix max_retries =
+  let rec acquire_with_retry prefix max_retries last_error =
     Lwt_mutex.with_lock lock (fun () ->
         let available =
           List.find_opt (fun entry -> not !(entry.in_use)) !pool
@@ -104,7 +104,11 @@ module TestDbPool = struct
         | None ->
             if List.length !pool < pool_size then (
               create_entry prefix >>= function
-              | Error _ when max_retries > 0 -> Lwt.return None
+              | Error err when max_retries > 0 ->
+                  (* Keep retrying, but remember the real error so the final
+                     failure reports it rather than a generic "exhausted". *)
+                  last_error := Some err;
+                  Lwt.return None
               | Error err -> Lwt.fail_with err
               | Ok entry ->
                   entry.in_use := true;
@@ -115,13 +119,22 @@ module TestDbPool = struct
     | Some db_url -> clean_database db_url >>= fun () -> Lwt.return_ok db_url
     | None when max_retries > 0 ->
         Lwt_unix.sleep retry_delay >>= fun () ->
-        acquire_with_retry prefix (max_retries - 1)
+        acquire_with_retry prefix (max_retries - 1) last_error
     | None ->
-        Lwt.return_error
-          "Pool exhausted and no databases available after retries"
+        let msg =
+          match !last_error with
+          | Some err ->
+              Printf.sprintf
+                "Pool exhausted and no databases available after retries; last \
+                 connection error: %s"
+                err
+          | None -> "Pool exhausted and no databases available after retries"
+        in
+        Lwt.return_error msg
 
   let acquire prefix =
-    acquire_with_retry prefix 10 (* Try up to 10 times with 0.5s delays *)
+    (* Try up to 10 times with 0.5s delays, surfacing the last real error. *)
+    acquire_with_retry prefix 10 (ref None)
 
   let release db_url =
     Lwt_mutex.with_lock lock (fun () ->
