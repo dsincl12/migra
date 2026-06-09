@@ -25,6 +25,14 @@ val ensure_migrations_table :
 (** Create the migrations table if absent and add the [checksum] column to
     pre-existing tables that lack it (dialect-aware). Idempotent. *)
 
+val table_exists :
+  ?table:string ->
+  Dialect.t ->
+  Types.db_conn ->
+  (bool, [> Caqti_error.t ]) Lwt_result.t
+(** Whether the migrations-tracking table exists, without creating it. Used by
+    read-only operations so they do not alter the schema. *)
+
 val is_applied :
   ?table:string ->
   Types.db_conn ->

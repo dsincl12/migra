@@ -24,6 +24,12 @@ init creates the database:
   Creating database: ./app.db
   Database './app.db' created successfully
 
+status before migrate is read-only: it reports the migration as pending (down)
+without creating the tracking table:
+
+  $ migra status | grep create_widgets
+    down      20240101120000  create_widgets
+
 --dry-run shows the plan without applying:
 
   $ migra migrate --dry-run

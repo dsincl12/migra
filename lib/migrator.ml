@@ -66,13 +66,15 @@ type rollback_strategy = Runner.rollback_strategy =
   | To of int64
   | All
 
-(** Connect, ensure the schema_migrations table exists, then run [f] with the
-    dialect and connection; the connection is always disconnected afterwards.
+(** Connect and run [f] with the dialect and connection; the connection is
+    always disconnected afterwards. By default the schema_migrations table is
+    created first; read-only operations pass [~ensure_table:false] so they never
+    alter the schema (they check existence themselves instead).
 
     Every failure that prevents running migrations - bad URL, connection
     failure, or table setup - is returned as a structured [Error], never raised
     and never stringified. [f]'s own result is propagated unchanged. *)
-let with_initialized_db ~(table : string) database_url
+let with_initialized_db ?(ensure_table = true) ~(table : string) database_url
     (f : Dialect.t -> Types.db_conn -> ('a, Types.error) Lwt_result.t) :
     ('a, Types.error) Lwt_result.t =
   match Runner.validate_table_name table with
@@ -88,12 +90,15 @@ let with_initialized_db ~(table : string) database_url
               let module Db = (val db : Caqti_lwt.CONNECTION) in
               Lwt.finalize
                 (fun () ->
-                  Runner.ensure_migrations_table ~table dialect db >>= function
-                  | Error err ->
-                      Lwt.return_error
-                        (Types.of_caqti_error
-                           ~context:"ensure schema_migrations table" err)
-                  | Ok () -> f dialect db)
+                  if not ensure_table then f dialect db
+                  else
+                    Runner.ensure_migrations_table ~table dialect db
+                    >>= function
+                    | Error err ->
+                        Lwt.return_error
+                          (Types.of_caqti_error
+                             ~context:"ensure schema_migrations table" err)
+                    | Ok () -> f dialect db)
                 (fun () -> Db.disconnect ())))
 
 let to_migration_result (runner_result : Runner.execution_result)
@@ -260,8 +265,15 @@ let redo ?(on_event = no_event) ?(step = 1) (config : config) =
                     Lwt.return_ok (make_operation_result results))))
 
 let status (cfg : config) =
-  with_initialized_db ~table:cfg.table cfg.database_url (fun dialect db ->
-      Runner.get_applied_records ~table:cfg.table dialect db >>= function
+  (* Read-only: do not create the tracking table. If it does not exist yet,
+     there are simply no applied migrations to report. *)
+  with_initialized_db ~ensure_table:false ~table:cfg.table cfg.database_url
+    (fun dialect db ->
+      ( Runner.table_exists ~table:cfg.table dialect db >>= function
+        | Error err -> Lwt.return_error err
+        | Ok true -> Runner.get_applied_records ~table:cfg.table dialect db
+        | Ok false -> Lwt.return_ok [] )
+      >>= function
       | Error err ->
           Lwt.return_error
             (Types.of_caqti_error ~context:"get applied migrations" err)
@@ -352,18 +364,37 @@ let to_plan ms =
   List.map (fun m -> (m.Migration.version, m.Migration.description)) ms
 
 let pending_plan (config : config) =
-  with_initialized_db ~table:config.table config.database_url
-    (fun _dialect db ->
-      Runner.pending_migrations ~table:config.table
-        ~migrations_dir:config.migrations_dir db
-      >|= Result.map to_plan)
+  (* Read-only: do not create the tracking table. With no table, nothing is
+     applied yet, so every migration on disk is pending. *)
+  with_initialized_db ~ensure_table:false ~table:config.table
+    config.database_url (fun dialect db ->
+      Runner.table_exists ~table:config.table dialect db >>= function
+      | Error err ->
+          Lwt.return_error
+            (Types.of_caqti_error ~context:"check schema_migrations table" err)
+      | Ok true ->
+          Runner.pending_migrations ~table:config.table
+            ~migrations_dir:config.migrations_dir db
+          >|= Result.map to_plan
+      | Ok false -> (
+          match Discovery.find_migrations ~dir:config.migrations_dir () with
+          | Error err -> Lwt.return_error err
+          | Ok all -> Lwt.return_ok (to_plan all)))
 
 let rollback_plan (config : config) strategy =
-  with_initialized_db ~table:config.table config.database_url
-    (fun _dialect db ->
-      Runner.rollback_targets ~table:config.table
-        ~migrations_dir:config.migrations_dir db strategy
-      >|= Result.map to_plan)
+  (* Read-only: do not create the tracking table. With no table, nothing is
+     applied, so there is nothing to roll back. *)
+  with_initialized_db ~ensure_table:false ~table:config.table
+    config.database_url (fun dialect db ->
+      Runner.table_exists ~table:config.table dialect db >>= function
+      | Error err ->
+          Lwt.return_error
+            (Types.of_caqti_error ~context:"check schema_migrations table" err)
+      | Ok false -> Lwt.return_ok []
+      | Ok true ->
+          Runner.rollback_targets ~table:config.table
+            ~migrations_dir:config.migrations_dir db strategy
+          >|= Result.map to_plan)
 
 let migration_template = "-- +migrate up\n\n\n-- +migrate down\n\n"
 

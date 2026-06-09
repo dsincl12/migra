@@ -145,6 +145,38 @@ let ensure_migrations_table ?(table = default_table) (dialect : Dialect.t)
   | Error e -> Lwt.return_error e
   | Ok () -> add_checksum_column ()
 
+(** Whether the migrations-tracking table already exists, without creating it.
+    Used by read-only operations (status, dry-run plans) so they never alter the
+    schema. Dialect-aware; for a [schema.table] name the schema is matched too.
+*)
+let table_exists ?(table = default_table) (dialect : Dialect.t)
+    (db : Types.db_conn) : (bool, [> Caqti_error.t ]) Lwt_result.t =
+  let module Db = (val db : Caqti_lwt.CONNECTION) in
+  match dialect with
+  | Dialect.SQLite ->
+      Db.find
+        ((string ->! bool) ~oneshot:true
+           "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type IN \
+            ('table','view') AND name = ?)")
+        table
+  | Dialect.PostgreSQL | Dialect.MariaDB -> (
+      match String.index_opt table '.' with
+      | Some i ->
+          let schema = String.sub table 0 i in
+          let name = String.sub table (i + 1) (String.length table - i - 1) in
+          Db.find
+            ((t2 string string ->! bool)
+               ~oneshot:true
+               "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE \
+                table_schema = ? AND table_name = ?)")
+            (schema, name)
+      | None ->
+          Db.find
+            ((string ->! bool) ~oneshot:true
+               "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE \
+                table_name = ?)")
+            table)
+
 let is_applied ?(table = default_table) (db : Types.db_conn) (version : int64) :
     (bool, [> Caqti_error.t ]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
