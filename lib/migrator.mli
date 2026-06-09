@@ -39,7 +39,10 @@ val make :
   config
 (** Build a {!config}. [migrations_dir] defaults to ["migrations"], [verbose] to
     [false], and [table] to ["schema_migrations"]. Preferred over the record
-    literal: {[ Migrator.make ~database_url () ]} *)
+    literal:
+    {[
+    Migrator.make ~database_url ()
+    ]} *)
 
 val default_table : string
 (** The default migrations-tracking table name ("schema_migrations"). *)
