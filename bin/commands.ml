@@ -15,7 +15,7 @@ let code_of_result (r : Migrator.operation_result) =
 let report verb (r : Migrator.migration_result) =
   match r.error with
   | None ->
-      Lwt_io.printlf "== %s %Ld in %.3fs\n" verb r.version
+      Lwt_io.printlf "== %s %Ld in %.3fs" verb r.version
         (Option.value r.elapsed_seconds ~default:0.)
   | Some e -> Lwt_io.eprintlf "** %Ld failed: %s" r.version e
 
