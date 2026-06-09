@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 1.0.1
+
+### Fixed
+- `rollback` and `redo` now validate applied migrations against the files on
+  disk before running and return `Error` on drift (a modified or missing
+  applied migration), just like `migrate`. Previously they could roll back
+  using modified down SQL or silently skip a migration whose file was gone.
+- `status` now includes an applied migration whose file is missing (shown as
+  `(migration file missing)`) instead of hiding it and understating the applied
+  count.
+- Database lifecycle commands (`create_database`/`drop_database`) now quote and
+  escape the database identifier in the generated DDL, so PostgreSQL names such
+  as `my-db` work and MariaDB names containing backticks are handled safely.
+
 ## 1.0.0
 
 First stable release.

@@ -4,6 +4,7 @@
  (modules main commands)
  (libraries
   migra
+  dune-build-info
   lwt
   lwt.unix
   caqti

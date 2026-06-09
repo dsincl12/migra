@@ -2,7 +2,7 @@
 
 (name migra)
 
-(version 1.0.0)
+(version 1.0.1)
 
 (generate_opam_files true)
 
@@ -23,6 +23,7 @@
   "A database migration tool and library for OCaml. Migrations are plain SQL with up and down sections, and the database (PostgreSQL, MariaDB/MySQL, or SQLite) is selected from the connection URL. Applied migrations are tracked with checksums, and drift (a modified, missing, or out-of-order migration) is detected before anything runs. It can be used from the command line or embedded as a library to migrate on application startup.")
  (depends
    (ocaml (>= 4.14.0))
+   (dune-build-info (>= 3.12))
    (lwt (>= 5.6.0))
    (alcotest (and :with-test (>= 1.7.0)))
    (alcotest-lwt (and :with-test (>= 1.7.0)))

@@ -193,11 +193,19 @@ let status_cmd =
   let info = Cmd.info "status" ~doc:"Show migration status" in
   Cmd.v info Term.(const run $ migrations_dir_arg $ table_arg $ db_url_arg)
 
+(* The version stamped into the build by dune from the package version in
+   dune-project (and VCS info), so it never has to be hand-edited here. It is
+   [None] only in unusual builds with no version info; fall back to "dev" then. *)
+let version =
+  match Build_info.V1.version () with
+  | Some v -> Build_info.V1.Version.to_string v
+  | None -> "dev"
+
 (* Main command group *)
 let main_cmd =
   let doc = "Simple database migration tool for OCaml" in
   let sdocs = Manpage.s_common_options in
-  let info = Cmd.info "migra" ~version:"1.0.0" ~doc ~sdocs in
+  let info = Cmd.info "migra" ~version ~doc ~sdocs in
   Cmd.group info
     [
       generate_cmd;
