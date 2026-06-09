@@ -158,6 +158,40 @@ let test_postgresql_dialect_sql () =
   Alcotest.(check string)
     "timestamp cast uses ::text" "created_at::text" timestamp_sql
 
+(* Database names are interpolated into CREATE/DROP DATABASE (they cannot be
+   bound as parameters), so the dialect must delimit them and escape any
+   embedded delimiter. *)
+let test_identifier_quoting () =
+  let module PG =
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.PostgreSQL
+        : Migra_engine.Dialect.DIALECT)
+  in
+  Alcotest.(check string)
+    "PostgreSQL double-quotes a hyphenated name" "CREATE DATABASE \"my-db\""
+    (PG.create_database_sql "my-db");
+  Alcotest.(check string)
+    "PostgreSQL drop double-quotes" "DROP DATABASE IF EXISTS \"my-db\""
+    (PG.drop_database_sql "my-db");
+  Alcotest.(check string)
+    "PostgreSQL doubles an embedded double-quote" "CREATE DATABASE \"a\"\"b\""
+    (PG.create_database_sql "a\"b");
+
+  let module Maria =
+    (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.MariaDB
+        : Migra_engine.Dialect.DIALECT)
+  in
+  Alcotest.(check string)
+    "MariaDB backtick-quotes a hyphenated name"
+    "CREATE DATABASE IF NOT EXISTS `my-db`"
+    (Maria.create_database_sql "my-db");
+  Alcotest.(check string)
+    "MariaDB drop backtick-quotes" "DROP DATABASE IF EXISTS `my-db`"
+    (Maria.drop_database_sql "my-db");
+  Alcotest.(check string)
+    "MariaDB doubles an embedded backtick"
+    "CREATE DATABASE IF NOT EXISTS `a``b`"
+    (Maria.create_database_sql "a`b")
+
 let test_sqlite_dialect_sql () =
   let module D =
     (val Migra_engine.Dialect.get_dialect Migra_engine.Dialect.SQLite
@@ -180,5 +214,6 @@ let suite =
     ("to_string", `Quick, async_of_sync test_to_string);
     ("get_dialect", `Quick, async_of_sync test_get_dialect);
     ("postgresql_dialect_sql", `Quick, async_of_sync test_postgresql_dialect_sql);
+    ("identifier_quoting", `Quick, async_of_sync test_identifier_quoting);
     ("sqlite_dialect_sql", `Quick, async_of_sync test_sqlite_dialect_sql);
   ]

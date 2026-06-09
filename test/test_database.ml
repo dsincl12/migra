@@ -289,6 +289,45 @@ let test_drop_database_idempotent () =
            (Migra.Types.show_error msg))
   | Ok () -> Lwt.return_unit
 
+(* A hyphenated database name is not a bare SQL identifier, so it must be
+   quoted in the DDL. Before quoting, CREATE DATABASE my-db was a syntax error;
+   this exercises create + drop end to end against the real server. *)
+let test_create_database_hyphenated () =
+  let db_name = test_db_name "db_hyphen" ^ "-x" in
+  let admin_url = get_test_admin_url () in
+  let uri = Uri.of_string admin_url in
+  let host = Uri.host uri |> Option.value ~default:"localhost" in
+  let port = Uri.port uri |> Option.value ~default:5432 in
+  let userinfo = Uri.userinfo uri in
+  let auth = match userinfo with None -> "" | Some info -> info ^ "@" in
+  let db_url =
+    Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
+  in
+
+  Migra_engine.Database.create_database db_url >>= function
+  | Error msg ->
+      Alcotest.fail
+        (Printf.sprintf "create_database failed for hyphenated name: %s"
+           (Migra.Types.show_error msg))
+  | Ok () -> (
+      (* A second create is idempotent only if the existence check matches the
+         created (quoted) name - guards against the quoting and the lookup
+         disagreeing about the name. *)
+      Migra_engine.Database.create_database db_url
+      >>= function
+      | Error msg ->
+          Migra_engine.Database.drop_database db_url >>= fun _ ->
+          Alcotest.fail
+            (Printf.sprintf "second create_database (hyphenated) failed: %s"
+               (Migra.Types.show_error msg))
+      | Ok () -> (
+          Migra_engine.Database.drop_database db_url >>= function
+          | Error msg ->
+              Alcotest.fail
+                (Printf.sprintf "drop_database failed for hyphenated name: %s"
+                   (Migra.Types.show_error msg))
+          | Ok () -> Lwt.return_unit))
+
 let test_connect_db () =
   with_test_db_pooled "db_connect" (fun db_url ->
       Migra_engine.Database.connect_db db_url >>= function
@@ -392,6 +431,7 @@ let suite =
     ("create_database_idempotent", `Quick, test_create_database_idempotent);
     ("drop_database", `Quick, test_drop_database);
     ("drop_database_idempotent", `Quick, test_drop_database_idempotent);
+    ("create_database_hyphenated", `Quick, test_create_database_hyphenated);
     ("connect_db", `Quick, test_connect_db);
     ("connect_db_nonexistent", `Quick, test_connect_db_nonexistent);
     ("with_db", `Quick, test_with_db);

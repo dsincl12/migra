@@ -11,6 +11,22 @@ module type DIALECT = sig
   val supports_database_lifecycle : bool
 end
 
+(** Quote [name] as a delimited SQL identifier using [q] as the delimiter,
+    escaping any embedded delimiter by doubling it. This turns a name like
+    [my-db] or one containing the delimiter into a single, injection-safe
+    identifier token. Database names are interpolated into DDL (they cannot be
+    bound as parameters), so this is what keeps them safe. *)
+let quote_identifier ~(q : char) (name : string) : string =
+  let buf = Buffer.create (String.length name + 2) in
+  Buffer.add_char buf q;
+  String.iter
+    (fun c ->
+      if c = q then Buffer.add_char buf q;
+      Buffer.add_char buf c)
+    name;
+  Buffer.add_char buf q;
+  Buffer.contents buf
+
 module PostgreSQL_dialect : DIALECT = struct
   let name = "PostgreSQL"
   let default_port = Some 5432
@@ -20,10 +36,14 @@ module PostgreSQL_dialect : DIALECT = struct
   let database_exists_sql =
     "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)"
 
-  let create_database_sql db_name = Printf.sprintf "CREATE DATABASE %s" db_name
+  (* Double-quote the identifier so names that are not bare identifiers (e.g.
+     "my-db") are accepted and cannot break out of the statement. *)
+  let create_database_sql db_name =
+    Printf.sprintf "CREATE DATABASE %s" (quote_identifier ~q:'"' db_name)
 
   let drop_database_sql db_name =
-    Printf.sprintf "DROP DATABASE IF EXISTS %s" db_name
+    Printf.sprintf "DROP DATABASE IF EXISTS %s"
+      (quote_identifier ~q:'"' db_name)
 
   let timestamp_to_string col = Printf.sprintf "%s::text" col
 end
@@ -38,12 +58,16 @@ module MariaDB_dialect : DIALECT = struct
     "SELECT EXISTS(SELECT 1 FROM information_schema.SCHEMATA WHERE SCHEMA_NAME \
      = ?)"
 
+  (* Backtick-quote the identifier (doubling any embedded backtick) so names
+     with backticks or other special characters cannot break out of the
+     statement; IF NOT EXISTS for idempotency. *)
   let create_database_sql db_name =
-    (* Use backticks for identifier quoting, IF NOT EXISTS for idempotency *)
-    Printf.sprintf "CREATE DATABASE IF NOT EXISTS `%s`" db_name
+    Printf.sprintf "CREATE DATABASE IF NOT EXISTS %s"
+      (quote_identifier ~q:'`' db_name)
 
   let drop_database_sql db_name =
-    Printf.sprintf "DROP DATABASE IF EXISTS `%s`" db_name
+    Printf.sprintf "DROP DATABASE IF EXISTS %s"
+      (quote_identifier ~q:'`' db_name)
 
   let timestamp_to_string col = Printf.sprintf "CAST(%s AS CHAR)" col
 end
