@@ -221,5 +221,9 @@ let main_cmd =
       status_cmd;
     ]
 
-(* Entry point *)
-let () = exit (Cmd.eval main_cmd)
+(* Entry point. Configure logging here (opt-in) rather than as a library
+   load-time side effect, so linking Migra never hijacks an application's own
+   logging - only the CLI installs a reporter. *)
+let () =
+  Migra.Logging.setup ();
+  exit (Cmd.eval main_cmd)

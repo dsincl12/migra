@@ -1,4 +1,4 @@
 (library
  (name migra)
  (public_name migra)
- (libraries migra.engine lwt lwt.unix caqti caqti-lwt uri unix))
+ (libraries migra.engine lwt lwt.unix caqti caqti-lwt uri unix logs))

@@ -4,10 +4,6 @@ module Discovery = Migra_engine.Discovery
 module Dialect = Migra_engine.Dialect
 module Migration = Migra_engine.Migration
 
-(* Reference Logging so it is linked in and its load-time logger setup runs.
-   setup is idempotent (it no-ops if a reporter is already installed). *)
-let () = Migra_engine.Logging.setup ()
-
 type config = {
   database_url : string;
   migrations_dir : string;

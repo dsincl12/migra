@@ -1,9 +1,13 @@
 (** Logging configuration for Migra. *)
 
-(** Setup logging with timestamps.
+(** Install a timestamped log reporter and set the level to [Info], but only if
+    no reporter has been configured yet, so an embedding application's own
+    logging setup is never overridden.
 
-    This is called automatically when the library loads. You typically don't
-    need to call this manually. *)
+    This is {b not} called automatically: merely linking the library must not
+    hijack the process-global [Logs] reporter. The CLI calls it at startup; a
+    library embedder calls it (or configures [Logs] themselves) if they want
+    Migra's log output. *)
 let setup () =
   (* Check if the default nop reporter is still active *)
   let current_reporter = Logs.reporter () in
@@ -31,6 +35,3 @@ let setup () =
 
 (** Set the minimum log level. *)
 let set_level level = Logs.set_level (Some level)
-
-(* Automatically initialize logging when the library is loaded *)
-let () = setup ()
