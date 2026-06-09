@@ -1,8 +1,9 @@
 (** CLI command implementations for Migra. *)
 
-val generate : string -> int Lwt.t
+val generate : string -> string -> int Lwt.t
 (** Generate a new migration file
 
+    @param migrations_dir Directory to create the migration file in
     @param name Migration name (description part of filename)
     @return Exit code: 0 on success, 1 on failure *)
 

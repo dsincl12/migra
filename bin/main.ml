@@ -50,19 +50,6 @@ let dry_run_arg =
     & info [ "dry-run" ]
         ~doc:"Show what would happen without changing the database")
 
-(* Generate command *)
-let generate_cmd =
-  let name =
-    Arg.(
-      required
-      & pos 0 (some string) None
-      & info [] ~docv:"NAME" ~doc:"Migration name")
-  in
-  let run name = run_lwt (fun () -> Commands.generate name) in
-  let doc = "Generate a new migration file" in
-  let info = Cmd.info "generate" ~doc in
-  Cmd.v info Term.(const run $ name)
-
 (* Shared --table option: name of the migrations-tracking table *)
 let table_arg =
   Arg.(
@@ -91,6 +78,21 @@ let step_arg =
     value
     & opt (some int) None
     & info [ "step" ] ~docv:"N" ~doc:"Number of migrations (default: 1)")
+
+(* Generate command *)
+let generate_cmd =
+  let name =
+    Arg.(
+      required
+      & pos 0 (some string) None
+      & info [] ~docv:"NAME" ~doc:"Migration name")
+  in
+  let run migrations_dir name =
+    run_lwt (fun () -> Commands.generate migrations_dir name)
+  in
+  let doc = "Generate a new migration file" in
+  let info = Cmd.info "generate" ~doc in
+  Cmd.v info Term.(const run $ migrations_dir_arg $ name)
 
 (* Migrate command *)
 let migrate_cmd =

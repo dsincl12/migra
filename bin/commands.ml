@@ -32,8 +32,8 @@ let print_plan verb (plan : (int64 * string) list) =
   Lwt_list.iter_s (fun (v, name) -> Lwt_io.printlf "  %Ld  %s" v name) plan
   >>= fun () -> Lwt.return 0
 
-let generate name =
-  match Migrator.generate name with
+let generate migrations_dir name =
+  match Migrator.generate ~migrations_dir name with
   | Ok path -> Lwt_io.printlf "Creating %s" path >>= fun () -> Lwt.return 0
   | Error err -> fail_error err
 
