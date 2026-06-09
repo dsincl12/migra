@@ -211,7 +211,12 @@ let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) :
     | `Mysql -> true
     | _ -> false
   in
-  let statements = Sql_parser.split_sql ~backslash_escapes sql in
+  (* Backslash escapes and the [DELIMITER] directive are both MySQL/MariaDB
+     features, enabled together only for that driver. *)
+  let statements =
+    Sql_parser.split_sql ~backslash_escapes ~allow_delimiter:backslash_escapes
+      sql
+  in
 
   (* Send the statement as a literal query (no placeholder parsing). *)
   let exec_one stmt =

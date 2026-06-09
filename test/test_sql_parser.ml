@@ -185,7 +185,9 @@ let test_split_sql_delimiter () =
      DELIMITER ;\n\
      INSERT INTO t VALUES (3);"
   in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements =
+    Migra_engine.Sql_parser.split_sql ~allow_delimiter:true sql
+  in
   Alcotest.(check int)
     "2 statements (procedure + insert)" 2 (List.length statements);
   Alcotest.(check bool)
@@ -194,6 +196,16 @@ let test_split_sql_delimiter () =
     && not (String.contains (List.nth statements 0) '/'));
   Alcotest.(check string)
     "trailing insert" "INSERT INTO t VALUES (3)" (List.nth statements 1)
+
+(* Without ~allow_delimiter (the default, used by every non-MySQL dialect), a
+   statement that merely begins with the word "delimiter" must not be treated as
+   a directive: it stays an ordinary statement split on its own semicolon. *)
+let test_split_sql_delimiter_ignored_by_default () =
+  let sql = "delimiter_count := 1; SELECT 2;" in
+  let statements = Migra_engine.Sql_parser.split_sql sql in
+  Alcotest.(check int) "2 ordinary statements" 2 (List.length statements);
+  Alcotest.(check string)
+    "first statement unchanged" "delimiter_count := 1" (List.nth statements 0)
 
 let async_of_sync f () =
   f ();
@@ -259,4 +271,7 @@ let suite =
       `Quick,
       async_of_sync test_split_sql_mysql_backslash );
     ("split_sql_delimiter", `Quick, async_of_sync test_split_sql_delimiter);
+    ( "split_sql_delimiter_ignored_by_default",
+      `Quick,
+      async_of_sync test_split_sql_delimiter_ignored_by_default );
   ]

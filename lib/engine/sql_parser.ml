@@ -12,7 +12,8 @@ type state =
 let is_space c = c = ' ' || c = '\t' || c = '\n' || c = '\r'
 let is_blank c = c = ' ' || c = '\t'
 
-let split_sql ?(backslash_escapes = false) (sql : string) : string list =
+let split_sql ?(backslash_escapes = false) ?(allow_delimiter = false)
+    (sql : string) : string list =
   let n = String.length sql in
   let buf = Buffer.create 256 in
   let statements = ref [] in
@@ -89,7 +90,14 @@ let split_sql ?(backslash_escapes = false) (sql : string) : string list =
       let c = sql.[i] in
       match state with
       | Normal -> (
-          match if line_start then parse_delimiter_directive i else None with
+          (* [DELIMITER] is a MySQL/MariaDB client directive, so it is only
+             honored when [allow_delimiter] is set. Otherwise a line that merely
+             starts with the word "delimiter" (e.g. a column of that name) would
+             be misread as a directive and corrupt the split on every dialect. *)
+          match
+            if line_start && allow_delimiter then parse_delimiter_directive i
+            else None
+          with
           | Some (new_delim, after) ->
               finish ();
               scan Normal new_delim true after
