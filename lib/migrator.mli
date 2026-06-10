@@ -1,7 +1,7 @@
 (** The public migration API: run, roll back, redo, inspect, and generate
     migrations. This is the high-level entry point; database lifecycle helpers
-    live in {!Migra.Database}, and the implementation in the internal
-    [migra.engine] library.
+    live in {!Migra.Database}. The engine that implements these is internal to
+    the [migra] library.
 
     {b Example usage:}
 
