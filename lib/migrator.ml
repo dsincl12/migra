@@ -1,8 +1,4 @@
 open Lwt.Infix
-module Runner = Migra_engine.Runner
-module Discovery = Migra_engine.Discovery
-module Dialect = Migra_engine.Dialect
-module Migration = Migra_engine.Migration
 
 type config = {
   database_url : string;
@@ -89,7 +85,7 @@ let with_initialized_db ?(ensure_table = true) ~(table : string) database_url
       | Error msg ->
           Lwt.return_error (Types.DatabaseError (Types.UrlParseError msg))
       | Ok dialect -> (
-          Migra_engine.Database.connect_db database_url >>= function
+          Connection.connect_db database_url >>= function
           | Error err -> Lwt.return_error err
           | Ok db ->
               let module Db = (val db : Caqti_lwt.CONNECTION) in

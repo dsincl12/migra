@@ -1,6 +1,6 @@
 let test_split_sql_single_statement () =
   let sql = "CREATE TABLE users (id INT PRIMARY KEY);" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "1 statement" 1 (List.length statements);
   Alcotest.(check string)
     "correct statement" "CREATE TABLE users (id INT PRIMARY KEY)"
@@ -8,7 +8,7 @@ let test_split_sql_single_statement () =
 
 let test_split_sql_multiple_statements () =
   let sql = "CREATE TABLE users (id INT);CREATE TABLE posts (id INT);" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements);
   Alcotest.(check string)
     "first statement" "CREATE TABLE users (id INT)" (List.nth statements 0);
@@ -17,7 +17,7 @@ let test_split_sql_multiple_statements () =
 
 let test_split_sql_single_quoted_string () =
   let sql = "INSERT INTO users (name) VALUES ('O''Brien; DROP TABLE users');" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (semicolon in string)" 1 (List.length statements);
   let stmt = List.hd statements in
@@ -27,7 +27,7 @@ let test_split_sql_single_quoted_string () =
 
 let test_split_sql_double_quoted_string () =
   let sql = "SELECT * FROM \"table;name\";" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (semicolon in identifier)" 1 (List.length statements);
   Alcotest.(check bool)
@@ -39,7 +39,7 @@ let test_split_sql_escaped_single_quotes () =
     "INSERT INTO users (name) VALUES ('John''s data'); INSERT INTO posts \
      (title) VALUES ('Post''s title');"
   in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements);
   List.iter
     (fun stmt ->
@@ -48,12 +48,12 @@ let test_split_sql_escaped_single_quotes () =
 
 let test_split_sql_escaped_double_quotes () =
   let sql = {|SELECT * FROM "table""name"; SELECT "col""umn" FROM t;|} in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements)
 
 let test_split_sql_comment_only () =
   let sql = "-- This is a comment\n;\nCREATE TABLE users (id INT);" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (comment filtered)" 1 (List.length statements);
   Alcotest.(check bool)
@@ -63,7 +63,7 @@ let test_split_sql_comment_only () =
 
 let test_split_sql_preserves_inline_comments () =
   let sql = "CREATE TABLE users (\n  -- user id\n  id INT\n);" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "1 statement" 1 (List.length statements);
   Alcotest.(check bool)
     "statement is non-empty" true
@@ -71,17 +71,17 @@ let test_split_sql_preserves_inline_comments () =
 
 let test_split_sql_empty () =
   let sql = "" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "no statements" 0 (List.length statements)
 
 let test_split_sql_whitespace_only () =
   let sql = "   \n\t  " in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "no statements" 0 (List.length statements)
 
 let test_split_sql_only_semicolons () =
   let sql = ";;;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "no statements" 0 (List.length statements)
 
 let test_split_sql_complex () =
@@ -97,37 +97,37 @@ let test_split_sql_complex () =
     CREATE INDEX idx_email ON users(email);
   |sql}
   in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "3 statements" 3 (List.length statements)
 
 let test_split_sql_no_trailing_semicolon () =
   let sql = "SELECT * FROM users" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "1 statement" 1 (List.length statements);
   Alcotest.(check string)
     "correct statement" "SELECT * FROM users" (List.hd statements)
 
 let test_split_sql_mixed_quotes () =
   let sql = {|SELECT "column_name", 'string;value' FROM "table;name";|} in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (semicolons in mixed quotes)" 1 (List.length statements)
 
 let test_split_sql_newlines_in_strings () =
   let sql = "INSERT INTO users (bio) VALUES ('Line 1\nLine 2;\nLine 3');" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "1 statement" 1 (List.length statements)
 
 let test_split_sql_consecutive_semicolons () =
   let sql = "SELECT 1;;; SELECT 2;;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements);
   Alcotest.(check string) "first statement" "SELECT 1" (List.nth statements 0);
   Alcotest.(check string) "second statement" "SELECT 2" (List.nth statements 1)
 
 let test_split_sql_trims_whitespace () =
   let sql = "  SELECT * FROM users  ;  INSERT INTO posts VALUES (1)  " in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements);
   Alcotest.(check string)
     "first trimmed" "SELECT * FROM users" (List.nth statements 0);
@@ -139,7 +139,7 @@ let test_split_sql_dollar_quote () =
     "CREATE FUNCTION f() RETURNS int AS $$ BEGIN RETURN 1; END; $$ LANGUAGE \
      plpgsql;"
   in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (dollar-quoted body not split)" 1 (List.length statements)
 
@@ -149,24 +149,24 @@ let test_split_sql_dollar_quote_tagged () =
      plpgsql; CREATE FUNCTION b() RETURNS void AS $body$ BEGIN; END; $body$ \
      LANGUAGE plpgsql;"
   in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements)
 
 let test_split_sql_block_comment () =
   let sql = "/* drop; everything; */ SELECT 1;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (semicolons in block comment)" 1 (List.length statements)
 
 let test_split_sql_line_comment_semicolon () =
   let sql = "SELECT 1 -- note; not a terminator\nFROM t;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (semicolon in line comment)" 1 (List.length statements)
 
 let test_split_sql_backtick () =
   let sql = "SELECT * FROM `weird;name`;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "1 statement (semicolon in backtick id)" 1 (List.length statements)
 
@@ -174,8 +174,7 @@ let test_split_sql_mysql_backslash () =
   let sql = {|INSERT INTO t VALUES ('a\'; still in string')|} in
   Alcotest.(check int)
     "1 statement (backslash escape on)" 1
-    (List.length
-       (Migra_engine.Sql_parser.split_sql ~backslash_escapes:true sql))
+    (List.length (Migra.Sql_parser.split_sql ~backslash_escapes:true sql))
 
 let test_split_sql_delimiter () =
   let sql =
@@ -185,9 +184,7 @@ let test_split_sql_delimiter () =
      DELIMITER ;\n\
      INSERT INTO t VALUES (3);"
   in
-  let statements =
-    Migra_engine.Sql_parser.split_sql ~allow_delimiter:true sql
-  in
+  let statements = Migra.Sql_parser.split_sql ~allow_delimiter:true sql in
   Alcotest.(check int)
     "2 statements (procedure + insert)" 2 (List.length statements);
   Alcotest.(check bool)
@@ -202,7 +199,7 @@ let test_split_sql_delimiter () =
    a directive: it stays an ordinary statement split on its own semicolon. *)
 let test_split_sql_delimiter_ignored_by_default () =
   let sql = "delimiter_count := 1; SELECT 2;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 ordinary statements" 2 (List.length statements);
   Alcotest.(check string)
     "first statement unchanged" "delimiter_count := 1" (List.nth statements 0)
@@ -211,7 +208,7 @@ let test_split_sql_delimiter_ignored_by_default () =
    not open a dollar-quoted body that swallows the following semicolons. *)
 let test_split_sql_dollar_digit_not_a_quote () =
   let sql = "SELECT $1$ AS x; SELECT 2;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int) "2 statements" 2 (List.length statements);
   Alcotest.(check string) "second statement" "SELECT 2" (List.nth statements 1)
 
@@ -220,7 +217,7 @@ let test_split_sql_dollar_digit_not_a_quote () =
    string instead of ending it. *)
 let test_split_sql_pg_escape_string () =
   let sql = "SELECT E'semi;colon\\'s' AS x; SELECT 2;" in
-  let statements = Migra_engine.Sql_parser.split_sql sql in
+  let statements = Migra.Sql_parser.split_sql sql in
   Alcotest.(check int)
     "2 statements (E'...' keeps the semicolon)" 2 (List.length statements);
   Alcotest.(check string) "second statement" "SELECT 2" (List.nth statements 1)
@@ -229,9 +226,7 @@ let test_split_sql_pg_escape_string () =
    escaped double-quote does not end the string early. *)
 let test_split_sql_mysql_double_quote_backslash () =
   let sql = "SELECT \"a\\\"; b\" FROM t;" in
-  let statements =
-    Migra_engine.Sql_parser.split_sql ~backslash_escapes:true sql
-  in
+  let statements = Migra.Sql_parser.split_sql ~backslash_escapes:true sql in
   Alcotest.(check int)
     "1 statement (escaped quote in string)" 1 (List.length statements)
 

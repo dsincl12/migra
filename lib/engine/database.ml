@@ -1,21 +1,10 @@
 (** Database lifecycle (create/drop) and connection-URL display helpers.
-
-    Connection establishment and URL/credential parsing now live in
-    {!Connection}; the aliases below re-export the pieces external callers and
-    tests still reach for and will be dropped when the 2.0 merge curates this
-    module's interface. *)
+    Connection establishment and URL/credential parsing live in {!Connection}.
+*)
 
 open Lwt.Infix
 open Caqti_request.Infix
 open Caqti_type.Std
-
-let get_hostname = Connection.get_hostname
-let get_port = Connection.get_port
-let get_database = Connection.get_database
-let is_missing_driver_error = Connection.is_missing_driver_error
-let connect_db = Connection.connect_db
-let with_db = Connection.with_db
-let get_admin_database_url = Connection.get_admin_database_url
 
 (** The database name for display and lifecycle messages, derived from the
     connection URL. For PostgreSQL/MariaDB this is the URL path with its leading

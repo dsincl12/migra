@@ -30,7 +30,7 @@ let create_mariadb_test_db prefix =
   let db_name = mariadb_test_db_name prefix in
   let admin_url = get_mariadb_admin_url () in
 
-  Migra_engine.Database.connect_db admin_url >>= function
+  Migra.Connection.connect_db admin_url >>= function
   | Error err ->
       Lwt.return_error
         (Printf.sprintf "Failed to connect to MariaDB admin: %s"
@@ -56,7 +56,7 @@ let create_mariadb_test_db prefix =
 let drop_mariadb_test_db db_name =
   let admin_url = get_mariadb_admin_url () in
 
-  Migra_engine.Database.connect_db admin_url >>= function
+  Migra.Connection.connect_db admin_url >>= function
   | Error err ->
       Lwt.return_error
         (Printf.sprintf "Failed to connect to MariaDB admin: %s"
@@ -88,7 +88,7 @@ let with_mariadb_test_db prefix f =
           | Ok () -> Lwt.return_unit)
 
 let with_db db_url f =
-  Migra_engine.Database.connect_db db_url >>= function
+  Migra.Connection.connect_db db_url >>= function
   | Error err ->
       Lwt.fail_with
         (Printf.sprintf "Failed to connect: %s" (Migra.Types.show_error err))
@@ -100,7 +100,7 @@ let test_mariadb_create_database () =
 
   Lwt.finalize
     (fun () ->
-      Migra_engine.Database.create_database db_url >>= function
+      Migra.Database.create_database db_url >>= function
       | Error err ->
           Alcotest.fail
             (Printf.sprintf "create_database failed: %s"
@@ -114,13 +114,13 @@ let test_mariadb_create_database_idempotent () =
 
   Lwt.finalize
     (fun () ->
-      Migra_engine.Database.create_database db_url >>= function
+      Migra.Database.create_database db_url >>= function
       | Error err ->
           Alcotest.fail
             (Printf.sprintf "First create_database failed: %s"
                (Migra.Types.show_error err))
       | Ok () -> (
-          Migra_engine.Database.create_database db_url >>= function
+          Migra.Database.create_database db_url >>= function
           | Error err ->
               Alcotest.fail
                 (Printf.sprintf "Second create_database failed: %s"
@@ -134,19 +134,19 @@ let test_mariadb_drop_database () =
 
   Lwt.finalize
     (fun () ->
-      Migra_engine.Database.create_database db_url >>= function
+      Migra.Database.create_database db_url >>= function
       | Error err ->
           Alcotest.fail
             (Printf.sprintf "create_database failed: %s"
                (Migra.Types.show_error err))
       | Ok () -> (
-          Migra_engine.Database.drop_database db_url >>= function
+          Migra.Database.drop_database db_url >>= function
           | Error err ->
               Alcotest.fail
                 (Printf.sprintf "drop_database failed: %s"
                    (Migra.Types.show_error err))
           | Ok () -> (
-              Migra_engine.Database.connect_db db_url >>= function
+              Migra.Connection.connect_db db_url >>= function
               | Ok _db -> Alcotest.fail "Database still exists after drop"
               | Error _ -> Lwt.return_unit)))
     (fun () -> drop_mariadb_test_db db_name >>= fun _ -> Lwt.return_unit)
@@ -157,7 +157,7 @@ let test_mariadb_drop_database_idempotent () =
 
   Lwt.finalize
     (fun () ->
-      Migra_engine.Database.drop_database db_url >>= function
+      Migra.Database.drop_database db_url >>= function
       | Error err ->
           Alcotest.fail
             (Printf.sprintf "drop_database on non-existent DB failed: %s"
@@ -168,8 +168,7 @@ let test_mariadb_drop_database_idempotent () =
 let test_mariadb_schema_innodb () =
   with_mariadb_test_db "schema_innodb" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
@@ -204,16 +203,14 @@ let test_mariadb_schema_innodb () =
 let test_mariadb_schema_idempotent () =
   with_mariadb_test_db "schema_idem" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
                 (Printf.sprintf "First ensure_migrations_table failed: %s"
                    (Caqti_error.show err))
           | Ok () -> (
-              Migra_engine.Runner.ensure_migrations_table
-                Migra_engine.Dialect.MariaDB db
+              Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
               >>= function
               | Error err ->
                   Alcotest.fail
@@ -224,8 +221,7 @@ let test_mariadb_schema_idempotent () =
 let test_mariadb_migration_operations () =
   with_mariadb_test_db "migration_ops" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
@@ -234,7 +230,7 @@ let test_mariadb_migration_operations () =
           | Ok () -> (
               let version = 20240115120000L in
 
-              Migra_engine.Runner.is_applied db version >>= function
+              Migra.Runner.is_applied db version >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "is_applied failed: %s"
@@ -243,13 +239,13 @@ let test_mariadb_migration_operations () =
                   Alcotest.(check bool)
                     "Version not applied initially" false applied;
 
-                  Migra_engine.Runner.add_migration db version None >>= function
+                  Migra.Runner.add_migration db version None >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "add_migration failed: %s"
                            (Caqti_error.show err))
                   | Ok () -> (
-                      Migra_engine.Runner.is_applied db version >>= function
+                      Migra.Runner.is_applied db version >>= function
                       | Error err ->
                           Alcotest.fail
                             (Printf.sprintf "is_applied after add failed: %s"
@@ -258,15 +254,13 @@ let test_mariadb_migration_operations () =
                           Alcotest.(check bool)
                             "Version applied after add" true applied;
 
-                          Migra_engine.Runner.remove_migration db version
-                          >>= function
+                          Migra.Runner.remove_migration db version >>= function
                           | Error err ->
                               Alcotest.fail
                                 (Printf.sprintf "remove_migration failed: %s"
                                    (Caqti_error.show err))
                           | Ok () -> (
-                              Migra_engine.Runner.is_applied db version
-                              >>= function
+                              Migra.Runner.is_applied db version >>= function
                               | Error err ->
                                   Alcotest.fail
                                     (Printf.sprintf
@@ -281,8 +275,7 @@ let test_mariadb_migration_operations () =
 let test_mariadb_get_records () =
   with_mariadb_test_db "get_records" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
@@ -291,14 +284,13 @@ let test_mariadb_get_records () =
           | Ok () -> (
               let version = 20240115120000L in
 
-              Migra_engine.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version None >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
                        (Caqti_error.show err))
               | Ok () -> (
-                  Migra_engine.Runner.get_applied_records
-                    Migra_engine.Dialect.MariaDB db
+                  Migra.Runner.get_applied_records Migra.Dialect.MariaDB db
                   >>= function
                   | Error err ->
                       Alcotest.fail
@@ -308,25 +300,23 @@ let test_mariadb_get_records () =
                       Alcotest.(check int) "One record" 1 (List.length records);
                       let record = List.hd records in
                       Alcotest.(check int64_testable)
-                        "Record version" version
-                        record.Migra_engine.Runner.version;
+                        "Record version" version record.Migra.Runner.version;
                       Alcotest.(check bool)
                         "created_at exists" true
-                        (String.length record.Migra_engine.Runner.created_at > 0);
+                        (String.length record.Migra.Runner.created_at > 0);
                       Lwt.return_unit))))
 
 let test_mariadb_latest_version () =
   with_mariadb_test_db "latest_version" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
                 (Printf.sprintf "ensure_migrations_table failed: %s"
                    (Caqti_error.show err))
           | Ok () -> (
-              Migra_engine.Runner.get_latest_version db >>= function
+              Migra.Runner.get_latest_version db >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "get_latest_version failed: %s"
@@ -339,10 +329,10 @@ let test_mariadb_latest_version () =
                   let v2 = 20240115120000L in
                   let v3 = 20240116150000L in
 
-                  Migra_engine.Runner.add_migration db v2 None >>= fun _ ->
-                  Migra_engine.Runner.add_migration db v1 None >>= fun _ ->
-                  Migra_engine.Runner.add_migration db v3 None >>= fun _ ->
-                  Migra_engine.Runner.get_latest_version db >>= function
+                  Migra.Runner.add_migration db v2 None >>= fun _ ->
+                  Migra.Runner.add_migration db v1 None >>= fun _ ->
+                  Migra.Runner.add_migration db v3 None >>= fun _ ->
+                  Migra.Runner.get_latest_version db >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "get_latest_version failed: %s"
@@ -355,8 +345,7 @@ let test_mariadb_latest_version () =
 let test_mariadb_get_applied_versions_sorted () =
   with_mariadb_test_db "versions_sorted" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
@@ -367,10 +356,10 @@ let test_mariadb_get_applied_versions_sorted () =
               let v2 = 20240114100000L in
               let v3 = 20240116150000L in
 
-              Migra_engine.Runner.add_migration db v2 None >>= fun _ ->
-              Migra_engine.Runner.add_migration db v3 None >>= fun _ ->
-              Migra_engine.Runner.add_migration db v1 None >>= fun _ ->
-              Migra_engine.Runner.get_applied_versions db >>= function
+              Migra.Runner.add_migration db v2 None >>= fun _ ->
+              Migra.Runner.add_migration db v3 None >>= fun _ ->
+              Migra.Runner.add_migration db v1 None >>= fun _ ->
+              Migra.Runner.get_applied_versions db >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "get_applied_versions failed: %s"
@@ -388,8 +377,7 @@ let test_mariadb_get_applied_versions_sorted () =
 let test_mariadb_timestamp_conversion () =
   with_mariadb_test_db "timestamp" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
@@ -397,14 +385,13 @@ let test_mariadb_timestamp_conversion () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra_engine.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version None >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
                        (Caqti_error.show err))
               | Ok () -> (
-                  Migra_engine.Runner.get_applied_records
-                    Migra_engine.Dialect.MariaDB db
+                  Migra.Runner.get_applied_records Migra.Dialect.MariaDB db
                   >>= function
                   | Error err ->
                       Alcotest.fail
@@ -415,14 +402,13 @@ let test_mariadb_timestamp_conversion () =
                       let record = List.hd records in
                       Alcotest.(check bool)
                         "Timestamp converted to string" true
-                        (String.length record.Migra_engine.Runner.created_at > 0);
+                        (String.length record.Migra.Runner.created_at > 0);
                       Lwt.return_unit))))
 
 let test_mariadb_duplicate_migration_fails () =
   with_mariadb_test_db "duplicate" (fun db_url ->
       with_db db_url (fun db ->
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.MariaDB db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
           >>= function
           | Error err ->
               Alcotest.fail
@@ -430,13 +416,13 @@ let test_mariadb_duplicate_migration_fails () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra_engine.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version None >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "First add_migration failed: %s"
                        (Caqti_error.show err))
               | Ok () -> (
-                  Migra_engine.Runner.add_migration db version None >>= function
+                  Migra.Runner.add_migration db version None >>= function
                   | Ok () ->
                       Alcotest.fail
                         "Expected duplicate insert to fail, but it succeeded"
@@ -480,15 +466,14 @@ let test_mariadb_delimiter_procedure () =
           in
 
           with_db db_url (fun db ->
-              Migra_engine.Runner.ensure_migrations_table
-                Migra_engine.Dialect.MariaDB db
+              Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
               >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "ensure_migrations_table failed: %s"
                        (Caqti_error.show err))
               | Ok () -> (
-                  Migra_engine.Runner.run_pending db migrations_dir >>= function
+                  Migra.Runner.run_pending db migrations_dir >>= function
                   | Error msg ->
                       Alcotest.fail
                         (Printf.sprintf "run_pending failed: %s"
@@ -498,7 +483,7 @@ let test_mariadb_delimiter_procedure () =
                         "1 migration executed" 1 (List.length results);
                       Alcotest.(check bool)
                         "migration succeeded" true
-                        (List.for_all Migra_engine.Runner.is_success results);
+                        (List.for_all Migra.Runner.is_success results);
 
                       let module Db = (val db : Caqti_lwt.CONNECTION) in
                       let open Caqti_request.Infix in

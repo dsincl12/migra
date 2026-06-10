@@ -3,49 +3,49 @@ open Test_helpers
 let test_is_migration_file_valid () =
   Alcotest.(check bool)
     "valid migration file" true
-    (Migra_engine.Discovery.is_migration_file "20240115120000_create_users.sql");
+    (Migra.Discovery.is_migration_file "20240115120000_create_users.sql");
 
   Alcotest.(check bool)
     "valid with longer description" true
-    (Migra_engine.Discovery.is_migration_file
+    (Migra.Discovery.is_migration_file
        "20240115120000_add_user_email_column.sql");
 
   Alcotest.(check bool)
     "valid with short description" true
-    (Migra_engine.Discovery.is_migration_file "20240115120000_a.sql")
+    (Migra.Discovery.is_migration_file "20240115120000_a.sql")
 
 let test_is_migration_file_invalid () =
   Alcotest.(check bool)
     "reject .txt extension" false
-    (Migra_engine.Discovery.is_migration_file "20240115120000_create_users.txt");
+    (Migra.Discovery.is_migration_file "20240115120000_create_users.txt");
 
   Alcotest.(check bool)
     "reject no extension" false
-    (Migra_engine.Discovery.is_migration_file "20240115120000_create_users");
+    (Migra.Discovery.is_migration_file "20240115120000_create_users");
 
   Alcotest.(check bool)
     "reject too short" false
-    (Migra_engine.Discovery.is_migration_file "2024_short.sql");
+    (Migra.Discovery.is_migration_file "2024_short.sql");
 
   Alcotest.(check bool)
     "reject non-numeric version" false
-    (Migra_engine.Discovery.is_migration_file "2024011512000X_create.sql");
+    (Migra.Discovery.is_migration_file "2024011512000X_create.sql");
 
   Alcotest.(check bool)
     "reject missing underscore" false
-    (Migra_engine.Discovery.is_migration_file "20240115120000create.sql");
+    (Migra.Discovery.is_migration_file "20240115120000create.sql");
 
   Alcotest.(check bool)
     "reject README" false
-    (Migra_engine.Discovery.is_migration_file "README.md");
+    (Migra.Discovery.is_migration_file "README.md");
 
   Alcotest.(check bool)
     "reject empty" false
-    (Migra_engine.Discovery.is_migration_file "");
+    (Migra.Discovery.is_migration_file "");
 
   Alcotest.(check bool)
     "reject just .sql" false
-    (Migra_engine.Discovery.is_migration_file ".sql")
+    (Migra.Discovery.is_migration_file ".sql")
 
 let test_read_directory_valid () =
   Lwt_main.run
@@ -53,7 +53,7 @@ let test_read_directory_valid () =
          let _ = create_migration_file dir 20240115120000L "first" "-- test" in
          let _ = create_migration_file dir 20240115130000L "second" "-- test" in
 
-         let result = Migra_engine.Discovery.read_directory dir in
+         let result = Migra.Discovery.read_directory dir in
          Alcotest.(check bool) "read_directory succeeds" true (is_ok result);
 
          let files =
@@ -70,7 +70,7 @@ let test_read_directory_valid () =
 
 let test_read_directory_nonexistent () =
   let result =
-    Migra_engine.Discovery.read_directory "/tmp/nonexistent_directory_12345"
+    Migra.Discovery.read_directory "/tmp/nonexistent_directory_12345"
   in
   Alcotest.(check bool) "read_directory fails" true (is_error result);
 
@@ -90,7 +90,7 @@ let test_read_directory_not_a_dir () =
          let oc = open_out filepath in
          close_out oc;
 
-         let result = Migra_engine.Discovery.read_directory filepath in
+         let result = Migra.Discovery.read_directory filepath in
          Alcotest.(check bool) "read_directory fails" true (is_error result);
 
          let error =
@@ -120,7 +120,7 @@ let test_find_migrations () =
              "CREATE TABLE b;" "DROP TABLE b;"
          in
 
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool) "find_migrations succeeds" true (is_ok result);
 
          let migrations =
@@ -134,7 +134,7 @@ let test_find_migrations () =
          Alcotest.(check int) "found 3 migrations" 3 (List.length migrations);
 
          let versions =
-           List.map (fun m -> m.Migra_engine.Migration.version) migrations
+           List.map (fun m -> m.Migra.Migration.version) migrations
          in
          Alcotest.(check (list int64_testable))
            "migrations sorted"
@@ -155,7 +155,7 @@ let test_find_migrations_duplicate_version () =
              "CREATE TABLE b;" "DROP TABLE b;"
          in
 
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool)
            "find_migrations fails on duplicate" true (is_error result);
 
@@ -183,7 +183,7 @@ let test_find_migrations_rejects_malformed () =
          let oc = open_out (Filename.concat dir "1234567890_234_oops.sql") in
          output_string oc "-- +migrate up\n-- +migrate down\n";
          close_out oc;
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool)
            "malformed migration file is an error" true (is_error result);
          Lwt.return_unit))
@@ -198,7 +198,7 @@ let test_find_migrations_ignores_non_migration_sql () =
          let oc = open_out (Filename.concat dir "helpers.sql") in
          output_string oc "SELECT 1;";
          close_out oc;
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool)
            "succeeds, ignoring non-migration .sql" true (is_ok result);
          (match result with
@@ -214,7 +214,7 @@ let test_find_migrations_uppercase_ext () =
          output_string oc
            "-- +migrate up\nCREATE TABLE t;\n-- +migrate down\nDROP TABLE t;\n";
          close_out oc;
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool) "uppercase .SQL recognized" true (is_ok result);
          (match result with
          | Ok ms ->
@@ -225,7 +225,7 @@ let test_find_migrations_uppercase_ext () =
 let test_find_migrations_empty () =
   Lwt_main.run
     (with_temp_dir "discovery_empty" (fun dir ->
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool) "find_migrations succeeds" true (is_ok result);
 
          let migrations =
@@ -253,7 +253,7 @@ let test_find_migrations_filters () =
          let oc2 = open_out (Filename.concat dir "invalid_name.sql") in
          close_out oc2;
 
-         let result = Migra_engine.Discovery.find_migrations ~dir () in
+         let result = Migra.Discovery.find_migrations ~dir () in
          Alcotest.(check bool) "find_migrations succeeds" true (is_ok result);
 
          let migrations =
@@ -272,24 +272,24 @@ let test_find_pending_none_applied () =
   let migrations =
     [
       {
-        Migra_engine.Migration.version = 1L;
+        Migra.Migration.version = 1L;
         description = "first";
         file_path = "1.sql";
       };
       {
-        Migra_engine.Migration.version = 2L;
+        Migra.Migration.version = 2L;
         description = "second";
         file_path = "2.sql";
       };
       {
-        Migra_engine.Migration.version = 3L;
+        Migra.Migration.version = 3L;
         description = "third";
         file_path = "3.sql";
       };
     ]
   in
 
-  let pending = Migra_engine.Discovery.find_pending [] migrations in
+  let pending = Migra.Discovery.find_pending [] migrations in
   Alcotest.(check int) "all pending" 3 (List.length pending);
   Alcotest.(check (list migration_testable)) "same as input" migrations pending
 
@@ -297,17 +297,17 @@ let test_find_pending_all_applied () =
   let migrations =
     [
       {
-        Migra_engine.Migration.version = 1L;
+        Migra.Migration.version = 1L;
         description = "first";
         file_path = "1.sql";
       };
       {
-        Migra_engine.Migration.version = 2L;
+        Migra.Migration.version = 2L;
         description = "second";
         file_path = "2.sql";
       };
       {
-        Migra_engine.Migration.version = 3L;
+        Migra.Migration.version = 3L;
         description = "third";
         file_path = "3.sql";
       };
@@ -315,29 +315,29 @@ let test_find_pending_all_applied () =
   in
 
   let applied = [ 1L; 2L; 3L ] in
-  let pending = Migra_engine.Discovery.find_pending applied migrations in
+  let pending = Migra.Discovery.find_pending applied migrations in
   Alcotest.(check int) "none pending" 0 (List.length pending)
 
 let test_find_pending_partial () =
   let migrations =
     [
       {
-        Migra_engine.Migration.version = 1L;
+        Migra.Migration.version = 1L;
         description = "first";
         file_path = "1.sql";
       };
       {
-        Migra_engine.Migration.version = 2L;
+        Migra.Migration.version = 2L;
         description = "second";
         file_path = "2.sql";
       };
       {
-        Migra_engine.Migration.version = 3L;
+        Migra.Migration.version = 3L;
         description = "third";
         file_path = "3.sql";
       };
       {
-        Migra_engine.Migration.version = 4L;
+        Migra.Migration.version = 4L;
         description = "fourth";
         file_path = "4.sql";
       };
@@ -345,11 +345,11 @@ let test_find_pending_partial () =
   in
 
   let applied = [ 1L; 3L ] in
-  let pending = Migra_engine.Discovery.find_pending applied migrations in
+  let pending = Migra.Discovery.find_pending applied migrations in
   Alcotest.(check int) "two pending" 2 (List.length pending);
 
   let pending_versions =
-    List.map (fun m -> m.Migra_engine.Migration.version) pending
+    List.map (fun m -> m.Migra.Migration.version) pending
   in
   Alcotest.(check (list int64_testable))
     "correct pending versions" [ 2L; 4L ] pending_versions
@@ -358,49 +358,49 @@ let test_find_by_version_found () =
   let migrations =
     [
       {
-        Migra_engine.Migration.version = 1L;
+        Migra.Migration.version = 1L;
         description = "first";
         file_path = "1.sql";
       };
       {
-        Migra_engine.Migration.version = 2L;
+        Migra.Migration.version = 2L;
         description = "second";
         file_path = "2.sql";
       };
       {
-        Migra_engine.Migration.version = 3L;
+        Migra.Migration.version = 3L;
         description = "third";
         file_path = "3.sql";
       };
     ]
   in
 
-  let result = Migra_engine.Discovery.find_by_version migrations 2L in
+  let result = Migra.Discovery.find_by_version migrations 2L in
   Alcotest.(check bool) "migration found" true (Option.is_some result);
 
   let migration = Option.get result in
   Alcotest.(check int64_testable)
-    "correct version" 2L migration.Migra_engine.Migration.version;
+    "correct version" 2L migration.Migra.Migration.version;
   Alcotest.(check string)
-    "correct description" "second" migration.Migra_engine.Migration.description
+    "correct description" "second" migration.Migra.Migration.description
 
 let test_find_by_version_not_found () =
   let migrations =
     [
       {
-        Migra_engine.Migration.version = 1L;
+        Migra.Migration.version = 1L;
         description = "first";
         file_path = "1.sql";
       };
       {
-        Migra_engine.Migration.version = 2L;
+        Migra.Migration.version = 2L;
         description = "second";
         file_path = "2.sql";
       };
     ]
   in
 
-  let result = Migra_engine.Discovery.find_by_version migrations 99L in
+  let result = Migra.Discovery.find_by_version migrations 99L in
   Alcotest.(check bool) "migration not found" true (Option.is_none result)
 
 let test_ensure_migrations_dir_creates () =
@@ -413,7 +413,7 @@ let test_ensure_migrations_dir_creates () =
            (Sys.file_exists migrations_dir);
 
          let result =
-           Migra_engine.Discovery.ensure_migrations_dir ~dir:migrations_dir ()
+           Migra.Discovery.ensure_migrations_dir ~dir:migrations_dir ()
          in
          Alcotest.(check bool) "ensure succeeds" true (is_ok result);
 
@@ -432,12 +432,12 @@ let test_ensure_migrations_dir_idempotent () =
          let migrations_dir = Filename.concat dir "migrations" in
 
          let result1 =
-           Migra_engine.Discovery.ensure_migrations_dir ~dir:migrations_dir ()
+           Migra.Discovery.ensure_migrations_dir ~dir:migrations_dir ()
          in
          Alcotest.(check bool) "first call succeeds" true (is_ok result1);
 
          let result2 =
-           Migra_engine.Discovery.ensure_migrations_dir ~dir:migrations_dir ()
+           Migra.Discovery.ensure_migrations_dir ~dir:migrations_dir ()
          in
          Alcotest.(check bool) "second call succeeds" true (is_ok result2);
 
@@ -451,9 +451,7 @@ let test_ensure_migrations_dir_file_exists () =
          let oc = open_out filepath in
          close_out oc;
 
-         let result =
-           Migra_engine.Discovery.ensure_migrations_dir ~dir:filepath ()
-         in
+         let result = Migra.Discovery.ensure_migrations_dir ~dir:filepath () in
          Alcotest.(check bool) "ensure fails" true (is_error result);
 
          let error =

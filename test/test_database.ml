@@ -3,7 +3,7 @@ open Test_helpers
 
 let test_get_hostname_standard () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migra_engine.Database.get_hostname uri in
+  let result = Migra.Connection.get_hostname uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is localhost" "localhost" hostname;
@@ -11,7 +11,7 @@ let test_get_hostname_standard () =
 
 let test_get_hostname_ip () =
   let uri = Uri.of_string "postgresql://192.168.1.100:5432/mydb" in
-  let result = Migra_engine.Database.get_hostname uri in
+  let result = Migra.Connection.get_hostname uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is IP" "192.168.1.100" hostname;
@@ -19,7 +19,7 @@ let test_get_hostname_ip () =
 
 let test_get_hostname_ipv6 () =
   let uri = Uri.of_string "postgresql://[::1]:5432/mydb" in
-  let result = Migra_engine.Database.get_hostname uri in
+  let result = Migra.Connection.get_hostname uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is ::1" "::1" hostname;
@@ -27,7 +27,7 @@ let test_get_hostname_ipv6 () =
 
 let test_get_hostname_empty () =
   let uri = Uri.of_string "postgresql:///mydb" in
-  let result = Migra_engine.Database.get_hostname uri in
+  let result = Migra.Connection.get_hostname uri in
   Alcotest.(check bool) "parse succeeds with empty host" true (is_ok result);
   let hostname = get_ok result in
   Alcotest.(check string) "hostname is empty string" "" hostname;
@@ -35,7 +35,7 @@ let test_get_hostname_empty () =
 
 let test_get_port_standard () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migra_engine.Database.get_port uri in
+  let result = Migra.Connection.get_port uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let port = get_ok result in
   Alcotest.(check int) "port is 5432" 5432 port;
@@ -43,7 +43,7 @@ let test_get_port_standard () =
 
 let test_get_port_custom () =
   let uri = Uri.of_string "postgresql://localhost:9999/mydb" in
-  let result = Migra_engine.Database.get_port uri in
+  let result = Migra.Connection.get_port uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let port = get_ok result in
   Alcotest.(check int) "port is 9999" 9999 port;
@@ -51,13 +51,13 @@ let test_get_port_custom () =
 
 let test_get_port_missing () =
   let uri = Uri.of_string "postgresql://localhost/mydb" in
-  let result = Migra_engine.Database.get_port uri in
+  let result = Migra.Connection.get_port uri in
   Alcotest.(check bool) "parse fails" true (is_error result);
   Lwt.return_unit
 
 let test_get_database_standard () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
-  let result = Migra_engine.Database.get_database uri in
+  let result = Migra.Connection.get_database uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let db = get_ok result in
   Alcotest.(check string) "database is mydb" "mydb" db;
@@ -65,7 +65,7 @@ let test_get_database_standard () =
 
 let test_get_database_underscores () =
   let uri = Uri.of_string "postgresql://localhost:5432/my_app_db" in
-  let result = Migra_engine.Database.get_database uri in
+  let result = Migra.Connection.get_database uri in
   Alcotest.(check bool) "parse succeeds" true (is_ok result);
   let db = get_ok result in
   Alcotest.(check string) "database is my_app_db" "my_app_db" db;
@@ -73,21 +73,20 @@ let test_get_database_underscores () =
 
 let test_get_database_empty_path () =
   let uri = Uri.of_string "postgresql://localhost:5432" in
-  let result = Migra_engine.Database.get_database uri in
+  let result = Migra.Connection.get_database uri in
   Alcotest.(check bool) "parse fails on empty path" true (is_error result);
   Lwt.return_unit
 
 let test_get_database_slash_only () =
   let uri = Uri.of_string "postgresql://localhost:5432/" in
-  let result = Migra_engine.Database.get_database uri in
+  let result = Migra.Connection.get_database uri in
   Alcotest.(check bool) "parse fails on slash only" true (is_error result);
   Lwt.return_unit
 
 let test_get_admin_database_url_with_user () =
   let uri = Uri.of_string "postgresql://myuser@localhost:5432/mydb" in
   let result =
-    Migra_engine.Database.get_admin_database_url Migra_engine.Dialect.PostgreSQL
-      uri
+    Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL uri
   in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
@@ -98,8 +97,7 @@ let test_get_admin_database_url_with_user () =
 let test_get_admin_database_url_no_user () =
   let uri = Uri.of_string "postgresql://localhost:5432/mydb" in
   let result =
-    Migra_engine.Database.get_admin_database_url Migra_engine.Dialect.PostgreSQL
-      uri
+    Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL uri
   in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
@@ -110,8 +108,7 @@ let test_get_admin_database_url_no_user () =
 let test_get_admin_database_url_with_password () =
   let uri = Uri.of_string "postgresql://myuser:mypass@localhost:5432/mydb" in
   let result =
-    Migra_engine.Database.get_admin_database_url Migra_engine.Dialect.PostgreSQL
-      uri
+    Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL uri
   in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
@@ -126,8 +123,7 @@ let test_get_admin_database_url_with_password () =
 let test_get_admin_database_url_default_port () =
   let uri = Uri.of_string "postgresql://myuser@localhost/mydb" in
   let result =
-    Migra_engine.Database.get_admin_database_url Migra_engine.Dialect.PostgreSQL
-      uri
+    Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL uri
   in
   Alcotest.(check bool) "build succeeds" true (is_ok result);
   let admin_url = get_ok result in
@@ -145,8 +141,7 @@ let contains_sub haystack needle =
 
 let test_redact_url () =
   let r1 =
-    Migra_engine.Database.redact_url
-      "postgresql://user:secret@localhost:5432/db"
+    Migra.Database.redact_url "postgresql://user:secret@localhost:5432/db"
   in
   Alcotest.(check bool) "password masked" true (contains_sub r1 "*****");
   Alcotest.(check bool) "secret gone" false (contains_sub r1 "secret");
@@ -154,16 +149,16 @@ let test_redact_url () =
   Alcotest.(check bool) "length not leaked" false (contains_sub r1 "******");
   Alcotest.(check string)
     "no-password url unchanged" "postgresql://user@localhost:5432/db"
-    (Migra_engine.Database.redact_url "postgresql://user@localhost:5432/db");
+    (Migra.Database.redact_url "postgresql://user@localhost:5432/db");
   Alcotest.(check string)
     "sqlite unchanged" "sqlite3:/tmp/x.db"
-    (Migra_engine.Database.redact_url "sqlite3:/tmp/x.db");
+    (Migra.Database.redact_url "sqlite3:/tmp/x.db");
   Lwt.return_unit
 
 (** Test: a database name containing '/' is rejected (no connection needed - the
     check short-circuits before connecting). *)
 let test_create_database_rejects_slash () =
-  Migra_engine.Database.create_database "postgresql://localhost:5433/db/extra"
+  Migra.Database.create_database "postgresql://localhost:5433/db/extra"
   >>= function
   | Ok () -> Alcotest.fail "expected Error for a database name containing '/'"
   | Error err ->
@@ -177,7 +172,7 @@ let test_create_database_rejects_slash () =
       Lwt.return_unit
 
 let test_drop_database_rejects_slash () =
-  Migra_engine.Database.drop_database "mariadb://root@127.0.0.1:3307/db/extra"
+  Migra.Database.drop_database "mariadb://root@127.0.0.1:3307/db/extra"
   >>= function
   | Ok () -> Alcotest.fail "expected Error for a database name containing '/'"
   | Error err ->
@@ -192,8 +187,7 @@ let get_test_admin_url () =
   | Some url -> (
       let uri = Uri.of_string url in
       match
-        Migra_engine.Database.get_admin_database_url
-          Migra_engine.Dialect.PostgreSQL uri
+        Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL uri
       with
       | Ok admin_url -> admin_url
       | Error _ -> "postgresql://localhost:5432/postgres")
@@ -210,13 +204,12 @@ let test_create_database () =
     Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
   in
 
-  Migra_engine.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
       Alcotest.fail
         (Printf.sprintf "create_database failed: %s"
            (Migra.Types.show_error msg))
-  | Ok () ->
-      Migra_engine.Database.drop_database db_url >>= fun _ -> Lwt.return_unit
+  | Ok () -> Migra.Database.drop_database db_url >>= fun _ -> Lwt.return_unit
 
 let test_create_database_idempotent () =
   let db_name = test_db_name "db_idempotent" in
@@ -230,20 +223,19 @@ let test_create_database_idempotent () =
     Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
   in
 
-  Migra_engine.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
       Alcotest.fail
         (Printf.sprintf "First create_database failed: %s"
            (Migra.Types.show_error msg))
   | Ok () -> (
-      Migra_engine.Database.create_database db_url >>= function
+      Migra.Database.create_database db_url >>= function
       | Error msg ->
           Alcotest.fail
             (Printf.sprintf "Second create_database failed: %s"
                (Migra.Types.show_error msg))
       | Ok () ->
-          Migra_engine.Database.drop_database db_url >>= fun _ ->
-          Lwt.return_unit)
+          Migra.Database.drop_database db_url >>= fun _ -> Lwt.return_unit)
 
 let test_drop_database () =
   let db_name = test_db_name "db_drop" in
@@ -257,13 +249,13 @@ let test_drop_database () =
     Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
   in
 
-  Migra_engine.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
       Alcotest.fail
         (Printf.sprintf "create_database failed: %s"
            (Migra.Types.show_error msg))
   | Ok () -> (
-      Migra_engine.Database.drop_database db_url >>= function
+      Migra.Database.drop_database db_url >>= function
       | Error msg ->
           Alcotest.fail
             (Printf.sprintf "drop_database failed: %s"
@@ -282,7 +274,7 @@ let test_drop_database_idempotent () =
     Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
   in
 
-  Migra_engine.Database.drop_database db_url >>= function
+  Migra.Database.drop_database db_url >>= function
   | Error msg ->
       Alcotest.fail
         (Printf.sprintf "drop_database failed on non-existent DB: %s"
@@ -304,7 +296,7 @@ let test_create_database_hyphenated () =
     Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
   in
 
-  Migra_engine.Database.create_database db_url >>= function
+  Migra.Database.create_database db_url >>= function
   | Error msg ->
       Alcotest.fail
         (Printf.sprintf "create_database failed for hyphenated name: %s"
@@ -313,15 +305,15 @@ let test_create_database_hyphenated () =
       (* A second create is idempotent only if the existence check matches the
          created (quoted) name - guards against the quoting and the lookup
          disagreeing about the name. *)
-      Migra_engine.Database.create_database db_url
+      Migra.Database.create_database db_url
       >>= function
       | Error msg ->
-          Migra_engine.Database.drop_database db_url >>= fun _ ->
+          Migra.Database.drop_database db_url >>= fun _ ->
           Alcotest.fail
             (Printf.sprintf "second create_database (hyphenated) failed: %s"
                (Migra.Types.show_error msg))
       | Ok () -> (
-          Migra_engine.Database.drop_database db_url >>= function
+          Migra.Database.drop_database db_url >>= function
           | Error msg ->
               Alcotest.fail
                 (Printf.sprintf "drop_database failed for hyphenated name: %s"
@@ -330,7 +322,7 @@ let test_create_database_hyphenated () =
 
 let test_connect_db () =
   with_test_db_pooled "db_connect" (fun db_url ->
-      Migra_engine.Database.connect_db db_url >>= function
+      Migra.Connection.connect_db db_url >>= function
       | Error msg ->
           Alcotest.fail
             (Printf.sprintf "connect_db failed: %s"
@@ -341,15 +333,14 @@ let test_connect_db_nonexistent () =
   let db_url =
     "postgresql://localhost:5432/migra_db_that_does_not_exist_12345"
   in
-  Migra_engine.Database.connect_db db_url >>= function
+  Migra.Connection.connect_db db_url >>= function
   | Ok _db ->
       Alcotest.fail "Expected connection to fail on non-existent database"
   | Error _msg -> Lwt.return_unit
 
 let test_with_db () =
   with_test_db_pooled "db_with" (fun db_url ->
-      Migra_engine.Database.with_db db_url (fun _db -> Lwt.return 42)
-      >>= function
+      Migra.Connection.with_db db_url (fun _db -> Lwt.return 42) >>= function
       | Error msg ->
           Alcotest.fail
             (Printf.sprintf "with_db failed: %s" (Migra.Types.show_error msg))
@@ -359,7 +350,7 @@ let test_with_db () =
 
 let test_with_db_exception () =
   with_test_db_pooled "db_with_exception" (fun db_url ->
-      Migra_engine.Database.with_db db_url (fun _db ->
+      Migra.Connection.with_db db_url (fun _db ->
           Lwt.fail_with "Intentional test failure")
       >>= function
       | Ok _ -> Alcotest.fail "Expected with_db to catch exception"
@@ -372,20 +363,19 @@ let test_with_db_exception () =
 
 let test_initialize () =
   with_test_db_pooled "db_initialize" (fun db_url ->
-      Migra_engine.Database.connect_db db_url >>= function
+      Migra.Connection.connect_db db_url >>= function
       | Error msg ->
           Alcotest.fail
             (Printf.sprintf "connect_db failed: %s"
                (Migra.Types.show_error msg))
       | Ok db -> (
-          Migra_engine.Runner.ensure_migrations_table
-            Migra_engine.Dialect.PostgreSQL db
+          Migra.Runner.ensure_migrations_table Migra.Dialect.PostgreSQL db
           >>= function
           | Error err ->
               Alcotest.fail
                 (Printf.sprintf "create_table failed: %s" (Caqti_error.show err))
           | Ok () -> (
-              Migra_engine.Runner.get_applied_versions db >>= function
+              Migra.Runner.get_applied_versions db >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "Query after initialize failed: %s"

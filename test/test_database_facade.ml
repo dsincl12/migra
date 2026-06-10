@@ -60,7 +60,7 @@ let test_is_missing_driver_error () =
   let check expected msg =
     Alcotest.(check bool)
       msg expected
-      (Migra_engine.Database.is_missing_driver_error msg)
+      (Migra.Connection.is_missing_driver_error msg)
   in
   check true "Caqti failed to find a suitable driver for the URI";
   check true "no driver found for scheme mariadb: shared library not found";

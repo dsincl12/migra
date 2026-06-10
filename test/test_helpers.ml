@@ -15,8 +15,8 @@ module TestDbPool = struct
         match Uri.of_string url with
         | uri -> (
             match
-              Migra_engine.Database.get_admin_database_url
-                Migra_engine.Dialect.PostgreSQL uri
+              Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL
+                uri
             with
             | Ok admin_url -> admin_url
             | Error _ ->
@@ -36,7 +36,7 @@ module TestDbPool = struct
     in
     let admin_url = get_admin_url () in
 
-    Migra_engine.Database.connect_db admin_url >>= function
+    Migra.Connection.connect_db admin_url >>= function
     | Error err ->
         Lwt.return_error
           (Printf.sprintf "Failed to connect to postgres: %s"
@@ -69,7 +69,7 @@ module TestDbPool = struct
             Lwt.return_ok { db_name; db_url = test_url; in_use = ref false })
 
   let clean_database db_url =
-    Migra_engine.Database.connect_db db_url >>= function
+    Migra.Connection.connect_db db_url >>= function
     | Error _ -> Lwt.return_unit (* Ignore errors during cleanup *)
     | Ok db ->
         let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -148,7 +148,7 @@ module TestDbPool = struct
   let cleanup () =
     Lwt_mutex.with_lock lock (fun () ->
         let admin_url = get_admin_url () in
-        Migra_engine.Database.connect_db admin_url >>= function
+        Migra.Connection.connect_db admin_url >>= function
         | Error _ -> Lwt.return_unit
         | Ok db ->
             let module Db = (val db : Caqti_lwt.CONNECTION) in
@@ -176,8 +176,7 @@ let get_admin_url () =
       match Uri.of_string url with
       | uri -> (
           match
-            Migra_engine.Database.get_admin_database_url
-              Migra_engine.Dialect.PostgreSQL uri
+            Migra.Connection.get_admin_database_url Migra.Dialect.PostgreSQL uri
           with
           | Ok admin_url -> admin_url
           | Error _ ->
@@ -193,7 +192,7 @@ let create_test_db prefix =
   let db_name = test_db_name prefix in
   let admin_url = get_admin_url () in
 
-  Migra_engine.Database.connect_db admin_url >>= function
+  Migra.Connection.connect_db admin_url >>= function
   | Error err ->
       Lwt.return_error
         (Printf.sprintf "Failed to connect to postgres: %s"
@@ -228,7 +227,7 @@ let create_test_db prefix =
 let drop_test_db db_name =
   let admin_url = get_admin_url () in
 
-  Migra_engine.Database.connect_db admin_url >>= function
+  Migra.Connection.connect_db admin_url >>= function
   | Error err ->
       Lwt.return_error
         (Printf.sprintf "Failed to connect to postgres: %s"
@@ -301,7 +300,7 @@ let with_temp_dir prefix f =
       Lwt.return_unit)
 
 let create_migration_file dir version description content =
-  let filename = Migra_engine.Migration.make_filename version description in
+  let filename = Migra.Migration.make_filename version description in
   let filepath = Filename.concat dir filename in
   let oc = open_out filepath in
   output_string oc content;
@@ -320,10 +319,8 @@ let int64_testable =
 
 let migration_testable =
   Alcotest.testable
-    (fun fmt m -> Format.fprintf fmt "%s" (Migra_engine.Migration.to_string m))
-    (fun a b ->
-      Int64.equal a.Migra_engine.Migration.version
-        b.Migra_engine.Migration.version)
+    (fun fmt m -> Format.fprintf fmt "%s" (Migra.Migration.to_string m))
+    (fun a b -> Int64.equal a.Migra.Migration.version b.Migra.Migration.version)
 
 let is_ok = function Ok _ -> true | Error _ -> false
 let is_error = function Ok _ -> false | Error _ -> true
