@@ -124,8 +124,8 @@ val run_or_error :
     failure should abort; on success the [operation_result] is returned
     unchanged. *)
 
-(** Rollback strategy (an alias of {!Migra_engine.Runner.rollback_strategy}) *)
-type rollback_strategy = Migra_engine.Runner.rollback_strategy =
+(** Rollback strategy. *)
+type rollback_strategy =
   | Step of int  (** Rollback last N migrations *)
   | To of int64  (** Rollback to specific version (exclusive) *)
   | All  (** Rollback all migrations *)

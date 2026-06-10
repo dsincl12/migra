@@ -60,11 +60,16 @@ type status_result = {
   applied_count : int;
 }
 
-(* Reuse Runner's strategy type so values pass straight to Runner.rollback_targets. *)
-type rollback_strategy = Runner.rollback_strategy =
-  | Step of int
-  | To of int64
-  | All
+(* The public rollback strategy is its own type so the published API carries no
+   reference to the internal engine; it is converted to Runner's strategy at the
+   call sites. *)
+type rollback_strategy = Step of int | To of int64 | All
+
+let to_runner_strategy : rollback_strategy -> Runner.rollback_strategy =
+  function
+  | Step n -> Runner.Step n
+  | To v -> Runner.To v
+  | All -> Runner.All
 
 (** Connect and run [f] with the dialect and connection; the connection is
     always disconnected afterwards. By default the schema_migrations table is
@@ -224,7 +229,8 @@ let rollback ?(on_event = no_event) (config : config) strategy =
       | Error err -> Lwt.return_error err
       | Ok () -> (
           Runner.rollback_targets ~table:config.table
-            ~migrations_dir:config.migrations_dir db strategy
+            ~migrations_dir:config.migrations_dir db
+            (to_runner_strategy strategy)
           >>= function
           | Error err -> Lwt.return_error err
           | Ok to_rollback ->
@@ -393,7 +399,8 @@ let rollback_plan (config : config) strategy =
       | Ok false -> Lwt.return_ok []
       | Ok true ->
           Runner.rollback_targets ~table:config.table
-            ~migrations_dir:config.migrations_dir db strategy
+            ~migrations_dir:config.migrations_dir db
+            (to_runner_strategy strategy)
           >|= Result.map to_plan)
 
 let migration_template = "-- +migrate up\n\n\n-- +migrate down\n\n"
