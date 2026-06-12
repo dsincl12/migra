@@ -1,7 +1,19 @@
+; These suites reach into migra's sealed engine modules (Connection, Dialect,
+; Sql_parser, ...) through the Migra.* wrapper. Those modules are private_modules
+; in lib/dune, so dune does not install their .cmi files. Compiling the tests
+; against the installed package therefore fails with "Migra.Connection is an
+; alias for Migra__Connection, which is missing", which is what breaks the
+; opam-repository CI tests check. Gating every stanza on the dev profile keeps
+; the tests fully runnable from source (`dune runtest`) while opam's release
+; build (`dune build -p migra ...`) never compiles them. Keep this in sync with
+; the seal in lib/dune.
+
 ; Shared test helpers
 
 (library
  (name test_helpers)
+ (enabled_if
+  (= %{profile} dev))
  (modules test_helpers)
  (libraries migra alcotest lwt lwt.unix caqti caqti-lwt uri))
 
@@ -10,6 +22,8 @@
 
 (test
  (name test_unit)
+ (enabled_if
+  (= %{profile} dev))
  (modules
   test_unit
   test_sql_parser
@@ -25,6 +39,8 @@
 
 (executable
  (name test_integration)
+ (enabled_if
+  (= %{profile} dev))
  (modules
   test_integration
   test_database
@@ -49,5 +65,7 @@
 
 (rule
  (alias runtest-integration)
+ (enabled_if
+  (= %{profile} dev))
  (action
   (run %{dep:test_integration.exe})))
