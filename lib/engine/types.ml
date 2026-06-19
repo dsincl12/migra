@@ -17,6 +17,8 @@ type migration_error =
   | EmptySection of string * string
   | ParseError of file_error
   | VersionConflict of int64 * string * string (* version, file_a, file_b *)
+  | VersionTaken of int64 * string
+    (* version, existing file already using it: a same-second stamp collision *)
   | ChecksumMismatch of
       int64 * string (* version, file: applied file was modified *)
   | AppliedFileMissing of int64 (* version recorded as applied but no file *)
@@ -65,6 +67,12 @@ and show_migration_error = function
       Printf.sprintf
         "Migration version %Ld is duplicated by two files: %s and %s" version
         file_a file_b
+  | VersionTaken (version, existing) ->
+      Printf.sprintf
+        "Migration version %Ld is already used by %s. Version stamps have \
+         one-second resolution, so two migrations generated in the same second \
+         collide; wait a second and try again."
+        version existing
   | ChecksumMismatch (version, file) ->
       Printf.sprintf
         "Migration %Ld (%s) was modified after it was applied (checksum \

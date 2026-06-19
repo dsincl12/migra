@@ -8,6 +8,12 @@ generate creates one timestamped migration file in the chosen directory:
   $ ls gen/*.sql | wc -l | tr -d ' '
   1
 
+generate rejects an invalid name instead of writing an undiscoverable file:
+
+  $ migra generate -d gen "bad name"
+  Error: Invalid format: Invalid migration name "bad name": use only letters, digits, and underscores (e.g. create_users); it cannot be empty
+  [1]
+
 Use a fixed-version migration so the apply/rollback output is deterministic:
 
   $ mkdir migrations

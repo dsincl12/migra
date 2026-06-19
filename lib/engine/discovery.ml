@@ -89,6 +89,25 @@ let find_migrations ?(dir = default_migrations_dir) () :
                       (a.Migration.version, a.file_path, b.file_path)))
           | None -> Ok sorted))
 
+(** All migrations currently on disk in [dir], parsed best-effort: files that
+    are not migrations (or fail to parse) are skipped rather than erroring, and
+    no duplicate or out-of-order check is applied. Generation uses this to spot
+    a name or version clash without being blocked by an unrelated problem
+    already present in the directory. *)
+let existing_migrations ?(dir = default_migrations_dir) () :
+    (Migration.t list, Types.error) result =
+  match read_directory dir with
+  | Error e -> Error e
+  | Ok files ->
+      Ok
+        (List.filter_map
+           (fun filename ->
+             if has_sql_extension filename then
+               Result.to_option
+                 (Migration.from_file (Filename.concat dir filename))
+             else None)
+           files)
+
 (** Find pending migrations (not yet applied) Takes a list of applied versions
     and all discovered migrations, returns migrations that haven't been applied
     yet. *)

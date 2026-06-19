@@ -17,6 +17,7 @@ type migration_error =
   | EmptySection of string * string
   | ParseError of file_error
   | VersionConflict of int64 * string * string
+  | VersionTaken of int64 * string
   | ChecksumMismatch of int64 * string
   | AppliedFileMissing of int64
   | OutOfOrder of int64 * int64

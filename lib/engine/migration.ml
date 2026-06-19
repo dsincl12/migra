@@ -178,6 +178,29 @@ let read_up_sql_with_checksum (migration : t) :
 let make_filename (version : int64) (description : string) : string =
   Printf.sprintf "%Ld_%s.sql" version description
 
+(** Validate a migration name supplied to generation. Deliberately stricter than
+    {!parse_description}: the name becomes the file's description, so an empty
+    name (which yields an unparseable [<version>_.sql]) or any character outside
+    [A-Za-z0-9_] - path separators, spaces, dots - is rejected, keeping the
+    generated file discoverable and inside the migrations directory. *)
+let validate_name (name : string) : (unit, Types.error) result =
+  let ok c =
+    (c >= 'a' && c <= 'z')
+    || (c >= 'A' && c <= 'Z')
+    || (c >= '0' && c <= '9')
+    || c = '_'
+  in
+  if name <> "" && String.for_all ok name then Ok ()
+  else
+    Error
+      (Types.MigrationError
+         (Types.ParseError
+            (Types.InvalidFormat
+               (Printf.sprintf
+                  "Invalid migration name %S: use only letters, digits, and \
+                   underscores (e.g. create_users); it cannot be empty"
+                  name))))
+
 let compare (a : t) (b : t) : int = Int64.compare a.version b.version
 
 let to_string (migration : t) : string =

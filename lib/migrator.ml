@@ -403,21 +403,37 @@ let migration_template = "-- +migrate up\n\n\n-- +migrate down\n\n"
 
 let generate ?(migrations_dir = Discovery.default_migrations_dir)
     (name : string) : (string, Types.error) result =
-  match Discovery.ensure_migrations_dir ~dir:migrations_dir () with
-  | Error err -> Error err
-  | Ok () -> (
-      let filename =
-        Migration.make_filename (Migration.generate_version ()) name
-      in
-      let filepath = Filename.concat migrations_dir filename in
-      if Sys.file_exists filepath then
-        Error (Types.FileError (Types.AlreadyExists filepath))
-      else
-        try
-          (* [with_open_text] closes the channel even if writing raises, so a
-             failed write does not leak the descriptor; report it as a write (not
-             read) error. *)
-          Out_channel.with_open_text filepath (fun oc ->
-              output_string oc migration_template);
-          Ok filepath
-        with e -> Error (Types.FileError (Types.WriteError (filepath, e))))
+  let ( let* ) = Result.bind in
+  let* () = Migration.validate_name name in
+  let* () = Discovery.ensure_migrations_dir ~dir:migrations_dir () in
+  let* existing = Discovery.existing_migrations ~dir:migrations_dir () in
+  let version = Migration.generate_version () in
+  let filename = Migration.make_filename version name in
+  let filepath = Filename.concat migrations_dir filename in
+  let clash p = List.find_opt p existing in
+  (* Refuse to create a file discovery would later reject. A duplicate
+     description is almost always a mistake (as Ecto rejects it); a second file
+     sharing this version is a same-second stamp collision (stamps are 1-second
+     resolution). Both fail loudly rather than being silently renamed or
+     re-versioned. *)
+  match clash (fun (m : Migration.t) -> String.equal m.description name) with
+  | Some existing_m ->
+      Error (Types.FileError (Types.AlreadyExists existing_m.file_path))
+  | None -> (
+      match clash (fun (m : Migration.t) -> Int64.equal m.version version) with
+      | Some existing_m ->
+          Error
+            (Types.MigrationError
+               (Types.VersionTaken (version, existing_m.file_path)))
+      | None -> (
+          if Sys.file_exists filepath then
+            Error (Types.FileError (Types.AlreadyExists filepath))
+          else
+            try
+              (* [with_open_text] closes the channel even if writing raises, so a
+                 failed write does not leak the descriptor; report it as a write
+                 (not read) error. *)
+              Out_channel.with_open_text filepath (fun oc ->
+                  output_string oc migration_template);
+              Ok filepath
+            with e -> Error (Types.FileError (Types.WriteError (filepath, e)))))

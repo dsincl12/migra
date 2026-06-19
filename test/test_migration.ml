@@ -428,6 +428,83 @@ let test_validate_table_name () =
   Alcotest.(check bool) "reject injection" false (ok "t; DROP TABLE x");
   Alcotest.(check bool) "reject leading digit" false (ok "1t")
 
+let test_validate_name () =
+  let ok n = Result.is_ok (Migra.Migration.validate_name n) in
+  Alcotest.(check bool) "plain snake_case" true (ok "create_users");
+  Alcotest.(check bool) "digits" true (ok "2fa_support");
+  Alcotest.(check bool) "uppercase" true (ok "CreateUsers");
+  Alcotest.(check bool) "reject empty" false (ok "");
+  Alcotest.(check bool) "reject space" false (ok "create users");
+  Alcotest.(check bool) "reject slash" false (ok "../evil");
+  Alcotest.(check bool) "reject dot" false (ok "a.b");
+  Alcotest.(check bool) "reject hyphen" false (ok "create-users")
+
+let test_generate_creates_discoverable () =
+  Lwt_main.run
+    (with_temp_dir "gen" (fun dir ->
+         (match Migra.Migrator.generate ~migrations_dir:dir "create_users" with
+         | Error e -> Alcotest.fail (Migra.Types.show_error e)
+         | Ok path ->
+             Alcotest.(check bool) "file created" true (Sys.file_exists path));
+         (* the directory must stay discoverable after generating *)
+         (match Migra.Discovery.find_migrations ~dir () with
+         | Error e -> Alcotest.fail (Migra.Types.show_error e)
+         | Ok ms ->
+             Alcotest.(check int) "one migration discovered" 1 (List.length ms);
+             Alcotest.(check string)
+               "description round-trips" "create_users"
+               (List.hd ms).Migra.Migration.description);
+         Lwt.return_unit))
+
+let test_generate_rejects_invalid_name () =
+  Lwt_main.run
+    (with_temp_dir "gen" (fun dir ->
+         (match Migra.Migrator.generate ~migrations_dir:dir "" with
+         | Ok _ -> Alcotest.fail "empty name should be rejected"
+         | Error _ -> ());
+         (* a rejected name must not leave a file that poisons discovery *)
+         (match Migra.Discovery.find_migrations ~dir () with
+         | Error e -> Alcotest.fail (Migra.Types.show_error e)
+         | Ok ms -> Alcotest.(check int) "no file created" 0 (List.length ms));
+         Lwt.return_unit))
+
+let test_generate_rejects_duplicate_name () =
+  Lwt_main.run
+    (with_temp_dir "gen" (fun dir ->
+         (match Migra.Migrator.generate ~migrations_dir:dir "create_users" with
+         | Error e -> Alcotest.fail (Migra.Types.show_error e)
+         | Ok _ -> ());
+         (match Migra.Migrator.generate ~migrations_dir:dir "create_users" with
+         | Ok _ -> Alcotest.fail "duplicate name should be rejected"
+         | Error _ -> ());
+         Lwt.return_unit))
+
+let test_generate_rejects_version_collision () =
+  Lwt_main.run
+    (with_temp_dir "gen" (fun dir ->
+         (* Pre-seed a migration at the version generate will compute this
+            second. Generate must refuse to add a second file sharing that
+            version rather than poison discovery; if the clock ticks over first
+            it uses the next second - either way the seeded version is never
+            used by two files. *)
+         let version = Migra.Migration.generate_version () in
+         let _ =
+           create_migration_with_sections dir version "seeded"
+             "CREATE TABLE a (id INT);" "DROP TABLE a;"
+         in
+         ignore (Migra.Migrator.generate ~migrations_dir:dir "fresh");
+         (match Migra.Discovery.find_migrations ~dir () with
+         | Error e -> Alcotest.fail (Migra.Types.show_error e)
+         | Ok ms ->
+             let sharing =
+               List.filter
+                 (fun (m : Migra.Migration.t) -> Int64.equal m.version version)
+                 ms
+             in
+             Alcotest.(check int)
+               "seeded version used by exactly one file" 1 (List.length sharing));
+         Lwt.return_unit))
+
 let async_of_sync f () =
   f ();
   Lwt.return_unit
@@ -436,6 +513,19 @@ let suite =
   [
     ("checksum", `Quick, async_of_sync test_checksum);
     ("validate_table_name", `Quick, async_of_sync test_validate_table_name);
+    ("validate_name", `Quick, async_of_sync test_validate_name);
+    ( "generate_creates_discoverable",
+      `Quick,
+      async_of_sync test_generate_creates_discoverable );
+    ( "generate_rejects_invalid_name",
+      `Quick,
+      async_of_sync test_generate_rejects_invalid_name );
+    ( "generate_rejects_duplicate_name",
+      `Quick,
+      async_of_sync test_generate_rejects_duplicate_name );
+    ( "generate_rejects_version_collision",
+      `Quick,
+      async_of_sync test_generate_rejects_version_collision );
     ( "parse_section_exact_marker",
       `Quick,
       async_of_sync test_parse_section_exact_marker );

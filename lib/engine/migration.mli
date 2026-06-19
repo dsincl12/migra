@@ -35,5 +35,10 @@ val make_filename : int64 -> string -> string
 (** Generate migration filename from version and description. Format:
     [YYYYMMDDHHMMSS_description.sql] *)
 
+val validate_name : string -> (unit, Types.error) result
+(** Validate a migration name for {!Migra.Migrator.generate}. Stricter than
+    {!parse_description}: rejects an empty name or any character outside
+    [A-Za-z0-9_], so the generated file is always discoverable. *)
+
 val compare : t -> t -> int
 val to_string : t -> string
