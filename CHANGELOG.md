@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.1.0
+
+### Fixed
+- `generate` no longer creates a migration file that breaks discovery. An empty
+  or otherwise invalid name (anything outside letters, digits, and underscores)
+  is now rejected, as is a name already used by an existing migration. Such
+  files were previously written - and reported as created - then made every
+  later `migrate`, `status`, and `rollback` fail until removed by hand.
+- Two migrations generated in the same second no longer collide silently.
+  Version stamps have one-second resolution, so `generate` now reports the
+  duplicate and exits instead of writing a second file with the same version
+  (which discovery would then reject).
+
+### Added
+- `Types.VersionTaken` error variant, returned by `generate` when the version it
+  would assign is already used by a migration on disk.
+
 ## 2.0.0
 
 ### Changed (breaking)
