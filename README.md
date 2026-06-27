@@ -87,7 +87,7 @@ migra generate <name>     # create a new migration file
 migra migrate             # apply all pending migrations
 migra status              # show applied/pending migrations
 migra rollback            # roll back the most recent migration
-migra redo                # roll back the last migration and re-apply it
+migra redo                # roll back the last migration(s), then run all pending
 migra init                # create the database
 migra setup               # create the database and migrate
 migra drop                # drop the database
