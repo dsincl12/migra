@@ -179,7 +179,8 @@ let redo_cmd =
           (resolve_database_url db_url))
   in
   let info =
-    Cmd.info "redo" ~doc:"Roll back the last migration(s) and re-apply them"
+    Cmd.info "redo"
+      ~doc:"Roll back the last migration(s), then run all pending migrations"
   in
   Cmd.v info
     Term.(
