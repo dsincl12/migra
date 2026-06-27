@@ -194,6 +194,29 @@ let test_split_sql_delimiter () =
   Alcotest.(check string)
     "trailing insert" "INSERT INTO t VALUES (3)" (List.nth statements 1)
 
+(* The DELIMITER directive is recognized even when indented (leading blanks),
+   matching the mysql client: the parser's line_start tracking must survive
+   leading whitespace for this to work. Guards against a regression in the
+   line_start logic that would silently break indented stored-routine
+   migrations. *)
+let test_split_sql_delimiter_indented () =
+  let sql =
+    "  DELIMITER //\n"
+    ^ "CREATE PROCEDURE p() BEGIN INSERT INTO t VALUES (1); INSERT INTO t \
+       VALUES (2); END //\n" ^ "  DELIMITER ;\n" ^ "INSERT INTO t VALUES (3);"
+  in
+  (* Assert the literal leading blanks are present so a future rewrite of this
+     string can't silently drop the indentation this test exists to exercise
+     (OCaml's backslash-newline continuations strip source indentation). *)
+  Alcotest.(check bool)
+    "directive is indented" true
+    (String.length sql > 2 && String.sub sql 0 2 = "  ");
+  let statements = Migra.Sql_parser.split_sql ~allow_delimiter:true sql in
+  Alcotest.(check int)
+    "2 statements (indented directive honored)" 2 (List.length statements);
+  Alcotest.(check string)
+    "trailing insert" "INSERT INTO t VALUES (3)" (List.nth statements 1)
+
 (* Without ~allow_delimiter (the default, used by every non-MySQL dialect), a
    statement that merely begins with the word "delimiter" must not be treated as
    a directive: it stays an ordinary statement split on its own semicolon. *)
@@ -294,6 +317,9 @@ let suite =
       `Quick,
       async_of_sync test_split_sql_mysql_backslash );
     ("split_sql_delimiter", `Quick, async_of_sync test_split_sql_delimiter);
+    ( "split_sql_delimiter_indented",
+      `Quick,
+      async_of_sync test_split_sql_delimiter_indented );
     ( "split_sql_delimiter_ignored_by_default",
       `Quick,
       async_of_sync test_split_sql_delimiter_ignored_by_default );
