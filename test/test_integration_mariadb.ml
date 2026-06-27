@@ -529,6 +529,59 @@ let test_mariadb_delimiter_procedure () =
                                     "procedure inserted 2 rows" 2 n;
                                   Lwt.return_unit)))))))
 
+(* Regression: information_schema.tables on MySQL/MariaDB spans every database on
+   the server, so table_exists must scope to the current database (DATABASE())
+   and not match a schema_migrations owned by another database. *)
+let test_mariadb_table_exists_scoped () =
+  with_mariadb_test_db "tbl_exists" (fun db_url ->
+      create_mariadb_test_db "tbl_exists_other" >>= function
+      | Error msg -> Alcotest.fail msg
+      | Ok (other_name, other_url) ->
+          Lwt.finalize
+            (fun () ->
+              with_db other_url (fun other ->
+                  Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB
+                    other
+                  >>= function
+                  | Error err ->
+                      Alcotest.fail
+                        (Printf.sprintf "setup ensure table failed: %s"
+                           (Caqti_error.show err))
+                  | Ok () -> Lwt.return_unit)
+              >>= fun () ->
+              with_db db_url (fun db ->
+                  Migra.Runner.table_exists Migra.Dialect.MariaDB db
+                  >>= function
+                  | Error err ->
+                      Alcotest.fail
+                        (Printf.sprintf "table_exists failed: %s"
+                           (Caqti_error.show err))
+                  | Ok other_db_match -> (
+                      Alcotest.(check bool)
+                        "table in another database is not matched" false
+                        other_db_match;
+                      Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB
+                        db
+                      >>= function
+                      | Error err ->
+                          Alcotest.fail
+                            (Printf.sprintf "ensure table failed: %s"
+                               (Caqti_error.show err))
+                      | Ok () -> (
+                          Migra.Runner.table_exists Migra.Dialect.MariaDB db
+                          >>= function
+                          | Error err ->
+                              Alcotest.fail
+                                (Printf.sprintf "table_exists failed: %s"
+                                   (Caqti_error.show err))
+                          | Ok this_db_match ->
+                              Alcotest.(check bool)
+                                "table in this database is matched" true
+                                this_db_match;
+                              Lwt.return_unit))))
+            (fun () ->
+              drop_mariadb_test_db other_name >>= fun _ -> Lwt.return_unit))
+
 let migration_tests =
   [
     ("MariaDB migration operations", `Quick, test_mariadb_migration_operations);
@@ -542,6 +595,9 @@ let migration_tests =
     ( "MariaDB duplicate migration fails",
       `Quick,
       test_mariadb_duplicate_migration_fails );
+    ( "MariaDB table_exists is scoped to the database",
+      `Quick,
+      test_mariadb_table_exists_scoped );
   ]
 
 let suite = database_lifecycle_tests @ schema_tests @ migration_tests

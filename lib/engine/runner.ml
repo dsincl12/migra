@@ -131,7 +131,9 @@ let ensure_migrations_table ?(table = default_table) (dialect : Dialect.t)
 
 (** Whether the migrations-tracking table already exists, without creating it.
     Used by read-only operations (status, dry-run plans) so they never alter the
-    schema. Dialect-aware; for a [schema.table] name the schema is matched too.
+    schema. Scoped to the connection's own database/search_path so a table of
+    the same name in another database (MySQL/MariaDB) or schema (PostgreSQL) is
+    not mistaken for this one. A [schema.table] name is matched in that schema.
 *)
 let table_exists ?(table = default_table) (dialect : Dialect.t)
     (db : Types.db_conn) : (bool, [> Caqti_error.t ]) Lwt_result.t =
@@ -143,7 +145,18 @@ let table_exists ?(table = default_table) (dialect : Dialect.t)
            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type IN \
             ('table','view') AND name = ?)")
         table
-  | Dialect.PostgreSQL | Dialect.MariaDB -> (
+  | Dialect.PostgreSQL ->
+      (* Resolve through the same search_path a bare [FROM <table>] uses, so a
+         relation of this name in an off-path schema is not a false positive.
+         to_regclass also resolves indexes/sequences, so restrict relkind to
+         table / partitioned table / view / materialized view / foreign table;
+         to_regclass returns NULL (never raises) for an unknown name. *)
+      Db.find
+        ((string ->! bool) ~oneshot:true
+           "SELECT EXISTS(SELECT 1 FROM pg_class WHERE oid = to_regclass(?) \
+            AND relkind IN ('r','p','v','m','f'))")
+        table
+  | Dialect.MariaDB -> (
       match String.index_opt table '.' with
       | Some i ->
           let schema = String.sub table 0 i in
@@ -155,10 +168,12 @@ let table_exists ?(table = default_table) (dialect : Dialect.t)
                 table_schema = ? AND table_name = ?)")
             (schema, name)
       | None ->
+          (* information_schema.tables on MySQL/MariaDB spans every database on
+             the server; scope to the connection's current database. *)
           Db.find
             ((string ->! bool) ~oneshot:true
                "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE \
-                table_name = ?)")
+                table_schema = DATABASE() AND table_name = ?)")
             table)
 
 let is_applied ?(table = default_table) (db : Types.db_conn) (version : int64) :

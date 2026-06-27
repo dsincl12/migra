@@ -366,6 +366,66 @@ let test_get_latest_version_highest () =
                     "Latest is highest" (Some v3) latest;
                   Lwt.return_unit)))
 
+(* Regression: table_exists must resolve on the connection's search_path, not
+   match a same-named relation in another schema. *)
+let test_table_exists_scoped_to_search_path () =
+  with_test_db_pooled "schema_table_exists_scope" (fun db_url ->
+      Migra.Connection.connect_db db_url >>= function
+      | Error err ->
+          Lwt.fail_with
+            (Printf.sprintf "connect failed: %s" (Migra.Types.show_error err))
+      | Ok db ->
+          let module Db = (val db : Caqti_lwt.CONNECTION) in
+          let open Caqti_request.Infix in
+          let open Caqti_type.Std in
+          let exec sql =
+            Db.exec ((unit ->. unit) ~oneshot:true sql) () >>= function
+            | Ok () -> Lwt.return_unit
+            | Error err ->
+                Alcotest.fail
+                  (Printf.sprintf "%s failed: %s" sql (Caqti_error.show err))
+          in
+          Lwt.finalize
+            (fun () ->
+              (* Idempotent setup: clear any leftover from an earlier run, since
+                 the pool only cleans public tables, not extra schemas. *)
+              exec "DROP SCHEMA IF EXISTS other CASCADE" >>= fun () ->
+              exec "DROP TABLE IF EXISTS schema_migrations" >>= fun () ->
+              exec "CREATE SCHEMA other" >>= fun () ->
+              exec
+                "CREATE TABLE other.schema_migrations (version BIGINT PRIMARY \
+                 KEY)"
+              >>= fun () ->
+              Migra.Runner.table_exists Migra.Dialect.PostgreSQL db >>= function
+              | Error err ->
+                  Alcotest.fail
+                    (Printf.sprintf "table_exists failed: %s"
+                       (Caqti_error.show err))
+              | Ok off_path -> (
+                  Alcotest.(check bool)
+                    "off-search_path table is not matched" false off_path;
+                  exec
+                    "CREATE TABLE schema_migrations (version BIGINT PRIMARY \
+                     KEY)"
+                  >>= fun () ->
+                  Migra.Runner.table_exists Migra.Dialect.PostgreSQL db
+                  >>= function
+                  | Error err ->
+                      Alcotest.fail
+                        (Printf.sprintf "table_exists failed: %s"
+                           (Caqti_error.show err))
+                  | Ok on_path ->
+                      Alcotest.(check bool)
+                        "on-search_path table is matched" true on_path;
+                      Lwt.return_unit))
+            (fun () ->
+              let drop sql =
+                Db.exec ((unit ->. unit) ~oneshot:true sql) () >|= fun _ -> ()
+              in
+              drop "DROP SCHEMA IF EXISTS other CASCADE" >>= fun () ->
+              drop "DROP TABLE IF EXISTS schema_migrations" >>= fun () ->
+              Db.disconnect ()))
+
 let suite =
   [
     ("create_table creates schema_migrations table", `Quick, test_create_table);
@@ -408,4 +468,7 @@ let suite =
     ( "get_latest_version returns highest version number",
       `Quick,
       test_get_latest_version_highest );
+    ( "table_exists is scoped to the search_path",
+      `Quick,
+      test_table_exists_scoped_to_search_path );
   ]
