@@ -450,9 +450,9 @@ let schema_tests =
       test_mariadb_schema_idempotent );
   ]
 
-(** Test: a migration using DELIMITER to define a stored procedure (whose body
-    has interior semicolons) runs correctly through Runner, and the procedure
-    actually works. *)
+(** A migration that uses DELIMITER to define a stored procedure (whose body has
+    interior semicolons) runs end-to-end on MariaDB. On MySQL, routine creation
+    is unsupported (see below), so the check is skipped there. *)
 let test_mariadb_delimiter_procedure () =
   with_mariadb_test_db "delim_proc" (fun db_url ->
       with_temp_dir "migrations" (fun migrations_dir ->
@@ -466,47 +466,68 @@ let test_mariadb_delimiter_procedure () =
                DELIMITER ;"
               "DROP PROCEDURE addrow; DROP TABLE t;"
           in
-
+          let contains hay needle =
+            let hl = String.length hay and nl = String.length needle in
+            let rec go i =
+              i + nl <= hl && (String.sub hay i nl = needle || go (i + 1))
+            in
+            go 0
+          in
           with_db db_url (fun db ->
-              Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
-              >>= function
+              let module Db = (val db : Caqti_lwt.CONNECTION) in
+              let open Caqti_request.Infix in
+              let open Caqti_type.Std in
+              (* Stored programs (CREATE PROCEDURE/FUNCTION/TRIGGER/EVENT) go
+                 through the prepared-statement protocol the driver uses, which
+                 MariaDB accepts but MySQL rejects (error 1295; see runner.ml and
+                 ocaml-caqti#42). Run the end-to-end check on MariaDB and skip on
+                 MySQL; DELIMITER parsing itself is unit-tested on every dialect. *)
+              let version_q = (unit ->! string) "SELECT VERSION()" in
+              Db.find version_q () >>= function
               | Error err ->
                   Alcotest.fail
-                    (Printf.sprintf "ensure_migrations_table failed: %s"
+                    (Printf.sprintf "SELECT VERSION() failed: %s"
                        (Caqti_error.show err))
-              | Ok () -> (
-                  Migra.Runner.run_pending db migrations_dir >>= function
-                  | Error msg ->
+              | Ok version when not (contains version "MariaDB") ->
+                  Lwt.return_unit
+              | Ok _ -> (
+                  Migra.Runner.ensure_migrations_table Migra.Dialect.MariaDB db
+                  >>= function
+                  | Error err ->
                       Alcotest.fail
-                        (Printf.sprintf "run_pending failed: %s"
-                           (Migra.Types.show_error msg))
-                  | Ok results -> (
-                      Alcotest.(check int)
-                        "1 migration executed" 1 (List.length results);
-                      Alcotest.(check bool)
-                        "migration succeeded" true
-                        (List.for_all Migra.Runner.is_success results);
-
-                      let module Db = (val db : Caqti_lwt.CONNECTION) in
-                      let open Caqti_request.Infix in
-                      let open Caqti_type.Std in
-                      let call = (unit ->. unit) "CALL addrow(10)" in
-                      Db.exec call () >>= function
-                      | Error err ->
+                        (Printf.sprintf "ensure_migrations_table failed: %s"
+                           (Caqti_error.show err))
+                  | Ok () -> (
+                      Migra.Runner.run_pending db migrations_dir >>= function
+                      | Error msg ->
                           Alcotest.fail
-                            (Printf.sprintf "CALL addrow failed: %s"
-                               (Caqti_error.show err))
-                      | Ok () -> (
-                          let count = (unit ->! int) "SELECT COUNT(*) FROM t" in
-                          Db.find count () >>= function
+                            (Printf.sprintf "run_pending failed: %s"
+                               (Migra.Types.show_error msg))
+                      | Ok results -> (
+                          Alcotest.(check int)
+                            "1 migration executed" 1 (List.length results);
+                          Alcotest.(check bool)
+                            "migration succeeded" true
+                            (List.for_all Migra.Runner.is_success results);
+                          let call = (unit ->. unit) "CALL addrow(10)" in
+                          Db.exec call () >>= function
                           | Error err ->
                               Alcotest.fail
-                                (Printf.sprintf "count failed: %s"
+                                (Printf.sprintf "CALL addrow failed: %s"
                                    (Caqti_error.show err))
-                          | Ok n ->
-                              Alcotest.(check int)
-                                "procedure inserted 2 rows" 2 n;
-                              Lwt.return_unit))))))
+                          | Ok () -> (
+                              let count =
+                                (unit ->! int) "SELECT COUNT(*) FROM t"
+                              in
+                              Db.find count () >>= function
+                              | Error err ->
+                                  Alcotest.fail
+                                    (Printf.sprintf "count failed: %s"
+                                       (Caqti_error.show err))
+                              | Ok n ->
+                                  Alcotest.(check int)
+                                    "procedure inserted 2 rows" 2 n;
+                                  Lwt.return_unit)))))))
 
 let migration_tests =
   [

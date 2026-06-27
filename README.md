@@ -68,7 +68,7 @@ CREATE TABLE users (id SERIAL PRIMARY KEY, email TEXT NOT NULL);
 DROP TABLE users;
 ```
 
-For MySQL/MariaDB stored routines whose body contains semicolons, use a
+For stored programs whose body contains semicolons, use a
 `DELIMITER` directive (as you would in the `mysql` client):
 
 ```sql
@@ -77,6 +77,11 @@ DELIMITER //
 CREATE PROCEDURE addrow(IN n INT) BEGIN INSERT INTO t VALUES (n); END //
 DELIMITER ;
 ```
+
+This works on MariaDB. On MySQL it does not: Migra runs every statement through
+Caqti's prepared-statement protocol, which MySQL rejects for stored programs
+(`CREATE PROCEDURE`/`FUNCTION`/`TRIGGER`/`EVENT`, error 1295). Ordinary schema
+and data migrations are unaffected; MariaDB has no such restriction.
 
 ## CLI
 

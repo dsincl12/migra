@@ -233,7 +233,14 @@ let execute_sql ?(verbose = false) (db : Types.db_conn) (sql : string) :
       sql
   in
 
-  (* Send the statement as a literal query (no placeholder parsing). *)
+  (* Send each statement as a one-shot literal query (no placeholder parsing).
+     [~oneshot:true] only disables prepared-statement caching; the mariadb
+     driver still runs it via a short-lived prepared statement, because the
+     mariadb OCaml bindings expose only the prepared-statement API (no text
+     protocol). MySQL forbids preparing stored programs (CREATE PROCEDURE/
+     FUNCTION/TRIGGER/EVENT), so those fail on MySQL with error 1295; MariaDB
+     >= 10.6.2 permits it. Lifts if the bindings/driver gain a text-protocol
+     path. See https://github.com/paurkedal/ocaml-caqti/issues/42 *)
   let exec_one stmt =
     let request =
       Caqti_request.create ~oneshot:true Caqti_type.unit Caqti_type.unit
