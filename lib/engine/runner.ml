@@ -47,19 +47,32 @@ let validate_table_name (table : string) : (unit, Types.error) result =
     (c >= 'a' && c <= 'z')
     || (c >= 'A' && c <= 'Z')
     || (c >= '0' && c <= '9')
-    || c = '_' || c = '.'
+    || c = '_'
   in
   let ok_first c =
     (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c = '_'
   in
-  if table <> "" && ok_first table.[0] && String.for_all ok table then Ok ()
+  (* A valid identifier segment: non-empty, starting with a letter or '_', the
+     rest letters/digits/'_'. The schema qualifier is at most one '.', so each
+     side must be a valid segment; this rejects "public.", "a..b", and "a.b.c",
+     which would otherwise pass and surface as a database parse error rather
+     than a clean ValidationError. *)
+  let valid_segment s = s <> "" && ok_first s.[0] && String.for_all ok s in
+  let valid =
+    match String.split_on_char '.' table with
+    | [ name ] -> valid_segment name
+    | [ schema; name ] -> valid_segment schema && valid_segment name
+    | _ -> false
+  in
+  if valid then Ok ()
   else
     Error
       (Types.DatabaseError
          (Types.ValidationError
             (Printf.sprintf
-               "Invalid migrations table name %S: use only letters, digits, \
-                '_' and '.' (and it must not start with a digit)"
+               "Invalid migrations table name %S: use letters, digits, and '_' \
+                (not starting with a digit), optionally as a single \
+                'schema.table' qualifier"
                table)))
 
 (* Per-call query builders (table name interpolated; values still bound). *)

@@ -423,10 +423,17 @@ let test_validate_table_name () =
   Alcotest.(check bool) "plain" true (ok "schema_migrations");
   Alcotest.(check bool) "schema-qualified" true (ok "public.schema_migrations");
   Alcotest.(check bool) "underscore start" true (ok "_t");
+  Alcotest.(check bool) "digits inside" true (ok "t1");
   Alcotest.(check bool) "reject empty" false (ok "");
   Alcotest.(check bool) "reject space" false (ok "my table");
   Alcotest.(check bool) "reject injection" false (ok "t; DROP TABLE x");
-  Alcotest.(check bool) "reject leading digit" false (ok "1t")
+  Alcotest.(check bool) "reject leading digit" false (ok "1t");
+  Alcotest.(check bool) "reject trailing dot" false (ok "public.");
+  Alcotest.(check bool) "reject leading dot" false (ok ".t");
+  Alcotest.(check bool) "reject empty segment" false (ok "a..b");
+  Alcotest.(check bool) "reject two qualifiers" false (ok "a.b.c");
+  Alcotest.(check bool)
+    "reject digit-led table after schema" false (ok "public.1t")
 
 let test_validate_name () =
   let ok n = Result.is_ok (Migra.Migration.validate_name n) in
