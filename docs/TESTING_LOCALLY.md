@@ -27,8 +27,9 @@ dune runtest      # runs the unit suite - no database needed
 
 ## Integration tests
 
-These need running databases. SQLite needs nothing; PostgreSQL and MariaDB are
-selected via `DATABASE_URL` and `MARIADB_URL`. A `docker-compose.yml` brings both up:
+These need running databases. SQLite needs nothing; PostgreSQL uses `DATABASE_URL`
+and MariaDB/MySQL use `MARIADB_URL`. A `docker-compose.yml` brings up Postgres,
+MariaDB, and MySQL:
 
 ```sh
 docker compose up -d --wait

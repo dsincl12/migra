@@ -1,13 +1,8 @@
-# Databases for the integration test suite.
+# Databases for the integration test suite: Postgres (5433), MariaDB (3307),
+# and MySQL (3308). See docs/TESTING_LOCALLY.md for how to run the suite.
 #
-#   docker compose up -d --wait    # start Postgres and MariaDB, wait until ready
-#   DATABASE_URL=postgresql://postgres@localhost:5433/postgres \
-#   MARIADB_URL=mariadb://root:root@127.0.0.1:3307/mysql \
-#     dune exec test/test_integration.exe
-#   docker compose down            # stop and remove them
-#
-# Storage is tmpfs, so each run starts against a clean server. Host ports are
-# offset (5433, 3307) to avoid clashing with a locally installed database.
+# Storage is tmpfs, so each run starts against a clean server; the host ports
+# are offset to avoid clashing with a locally installed database.
 
 services:
   postgres:
@@ -38,3 +33,17 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3308:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot", "--silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
