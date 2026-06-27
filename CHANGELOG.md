@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## 2.1.1
+
+### Fixed
+- `migrate` and every command that ensures the tracking table no longer fail
+  on MySQL. `ensure_migrations_table` ran `ALTER TABLE ... ADD COLUMN IF NOT
+  EXISTS`, a MariaDB-only extension that MySQL rejects as a syntax error, so
+  migra was effectively broken against `mysql://` servers. The table is now
+  created with the `checksum` column directly, with no post-creation backfill.
+- `status` and `--dry-run` no longer take the wrong path when another database
+  (MySQL/MariaDB) or schema (PostgreSQL) on the same server has a
+  `schema_migrations` table. `table_exists` now resolves on the connection's
+  own database and search_path - PostgreSQL via `to_regclass`, MySQL/MariaDB
+  via `DATABASE()` - instead of matching by table name across the whole server.
+- An invalid migrations-table name passed to `--table` (an empty or extra
+  segment such as `public.`, `a..b`, or `a.b.c`) is now rejected with a clear
+  validation error instead of surfacing later as a database parse error.
+- The `redo` command's `--help` text and the README's `redo` one-liner now
+  describe its actual behavior: roll back the last migration(s), then run all
+  pending migrations.
+
 ## 2.1.0
 
 ### Fixed
