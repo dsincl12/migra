@@ -41,7 +41,7 @@ module TestDbPool = struct
         Lwt.return_error
           (Printf.sprintf "Failed to connect to postgres: %s"
              (Migra.Types.show_error err))
-    | Ok db -> (
+    | Ok db ->
         let module Db = (val db : Caqti_lwt.CONNECTION) in
         let open Caqti_request.Infix in
         let open Caqti_type.Std in
@@ -50,23 +50,27 @@ module TestDbPool = struct
             (Printf.sprintf "CREATE DATABASE %s" db_name)
         in
 
-        Db.exec query () >>= function
-        | Error err ->
-            Lwt.return_error
-              (Printf.sprintf "Failed to create test DB: %s"
-                 (Caqti_error.show err))
-        | Ok () ->
-            let uri = Uri.of_string admin_url in
-            let userinfo = Uri.userinfo uri in
-            let host = Uri.host uri |> Option.value ~default:"localhost" in
-            let port = Uri.port uri |> Option.value ~default:5432 in
-            let auth =
-              match userinfo with None -> "" | Some info -> info ^ "@"
-            in
-            let test_url =
-              Printf.sprintf "postgresql://%s%s:%d/%s" auth host port db_name
-            in
-            Lwt.return_ok { db_name; db_url = test_url; in_use = ref false })
+        Lwt.finalize
+          (fun () ->
+            Db.exec query () >>= function
+            | Error err ->
+                Lwt.return_error
+                  (Printf.sprintf "Failed to create test DB: %s"
+                     (Caqti_error.show err))
+            | Ok () ->
+                let uri = Uri.of_string admin_url in
+                let userinfo = Uri.userinfo uri in
+                let host = Uri.host uri |> Option.value ~default:"localhost" in
+                let port = Uri.port uri |> Option.value ~default:5432 in
+                let auth =
+                  match userinfo with None -> "" | Some info -> info ^ "@"
+                in
+                let test_url =
+                  Printf.sprintf "postgresql://%s%s:%d/%s" auth host port
+                    db_name
+                in
+                Lwt.return_ok { db_name; db_url = test_url; in_use = ref false })
+          (fun () -> Db.disconnect ())
 
   let clean_database db_url =
     Migra.Connection.connect_db db_url >>= function
@@ -90,7 +94,9 @@ module TestDbPool = struct
         |sql}
         in
 
-        Db.exec drop_tables_query () >>= fun _ -> Lwt.return_unit
+        Lwt.finalize
+          (fun () -> Db.exec drop_tables_query () >>= fun _ -> Lwt.return_unit)
+          (fun () -> Db.disconnect ())
 
   let rec acquire_with_retry prefix max_retries last_error =
     Lwt_mutex.with_lock lock (fun () ->
@@ -154,14 +160,18 @@ module TestDbPool = struct
             let module Db = (val db : Caqti_lwt.CONNECTION) in
             let open Caqti_request.Infix in
             let open Caqti_type.Std in
-            Lwt_list.iter_s
-              (fun entry ->
-                let query =
-                  (unit ->. unit) ~oneshot:true
-                    (Printf.sprintf "DROP DATABASE IF EXISTS %s" entry.db_name)
-                in
-                Db.exec query () >>= fun _ -> Lwt.return_unit)
-              !pool)
+            Lwt.finalize
+              (fun () ->
+                Lwt_list.iter_s
+                  (fun entry ->
+                    let query =
+                      (unit ->. unit) ~oneshot:true
+                        (Printf.sprintf "DROP DATABASE IF EXISTS %s"
+                           entry.db_name)
+                    in
+                    Db.exec query () >>= fun _ -> Lwt.return_unit)
+                  !pool)
+              (fun () -> Db.disconnect ()))
 end
 
 let test_db_name prefix =
