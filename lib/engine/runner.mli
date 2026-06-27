@@ -22,8 +22,8 @@ val ensure_migrations_table :
   Dialect.t ->
   Types.db_conn ->
   (unit, [> Caqti_error.t ]) Lwt_result.t
-(** Create the migrations table if absent and add the [checksum] column to
-    pre-existing tables that lack it (dialect-aware). Idempotent. *)
+(** Create the migrations table if it does not exist (dialect-aware).
+    Idempotent. *)
 
 val table_exists :
   ?table:string ->
@@ -55,9 +55,8 @@ val get_applied_records :
 val get_applied_checksums :
   ?table:string ->
   Types.db_conn ->
-  ((int64 * string option) list, [> Caqti_error.t ]) Lwt_result.t
-(** Get all applied (version, checksum) pairs, sorted chronologically. The
-    checksum is [None] for rows recorded before checksums were tracked. *)
+  ((int64 * string) list, [> Caqti_error.t ]) Lwt_result.t
+(** Get all applied (version, checksum) pairs, sorted chronologically. *)
 
 val get_latest_version :
   ?table:string ->
@@ -73,7 +72,7 @@ val add_migration :
   ?table:string ->
   Types.db_conn ->
   int64 ->
-  string option ->
+  string ->
   (unit, [> Caqti_error.t ]) Lwt_result.t
 (** Add a migration (mark as applied) with its checksum. Internal - use
     run_migration. *)
@@ -126,8 +125,7 @@ val validate :
   (unit, Types.error) Lwt_result.t
 (** Validate applied migrations against the files on disk: detects an applied
     migration whose file is missing ([AppliedFileMissing]) or whose contents
-    changed since it was applied ([ChecksumMismatch]). Rows recorded before
-    checksums were tracked are skipped. *)
+    changed since it was applied ([ChecksumMismatch]). *)
 
 val run_migration :
   ?verbose:bool ->

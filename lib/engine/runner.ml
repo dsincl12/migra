@@ -32,7 +32,7 @@ let log_verbose verbose msg =
     {v
       version    BIGINT PRIMARY KEY   -- 14-digit YYYYMMDDHHMMSS
       created_at TIMESTAMP            -- when applied (DB default)
-      checksum   TEXT                 -- MD5 of the migration file when applied
+      checksum   TEXT NOT NULL       -- MD5 of the migration file when applied
     v}
     The queries interpolate the (validated) table name, so they are built
     per-call as [~oneshot] requests rather than cached module-level values. *)
@@ -93,13 +93,13 @@ let all_records_query dialect table =
        table)
 
 let all_checksums_query table =
-  (unit ->* t2 int64 (option string))
+  (unit ->* t2 int64 string)
     ~oneshot:true
     (Printf.sprintf "SELECT version, checksum FROM %s ORDER BY version ASC"
        table)
 
 let insert_query table =
-  (t2 int64 (option string) ->. unit)
+  (t2 int64 string ->. unit)
     ~oneshot:true
     (Printf.sprintf "INSERT INTO %s (version, checksum) VALUES (?, ?)" table)
 
@@ -111,14 +111,13 @@ let latest_query table =
   (unit ->? int64) ~oneshot:true
     (Printf.sprintf "SELECT version FROM %s ORDER BY version DESC LIMIT 1" table)
 
-(** Create the migrations table if absent, and add the [checksum] column to
-    tables created by older versions that lack it (dialect-aware). *)
+(** Create the migrations table if it does not exist (dialect-aware). *)
 let ensure_migrations_table ?(table = default_table) (dialect : Dialect.t)
     (db : Types.db_conn) : (unit, [> Caqti_error.t ]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   let columns =
     "version BIGINT PRIMARY KEY, created_at TIMESTAMP NOT NULL DEFAULT \
-     CURRENT_TIMESTAMP, checksum TEXT"
+     CURRENT_TIMESTAMP, checksum TEXT NOT NULL"
   in
   let create_ddl =
     match dialect with
@@ -128,35 +127,7 @@ let ensure_migrations_table ?(table = default_table) (dialect : Dialect.t)
     | Dialect.PostgreSQL | Dialect.SQLite ->
         Printf.sprintf "CREATE TABLE IF NOT EXISTS %s (%s)" table columns
   in
-  (* Backfill the checksum column for tables created before it existed. *)
-  let add_checksum_column () =
-    match dialect with
-    | Dialect.PostgreSQL | Dialect.MariaDB ->
-        Db.exec
-          ((unit ->. unit) ~oneshot:true
-             (Printf.sprintf
-                "ALTER TABLE %s ADD COLUMN IF NOT EXISTS checksum TEXT" table))
-          ()
-    | Dialect.SQLite -> (
-        let has_col =
-          (unit ->! int) ~oneshot:true
-            (Printf.sprintf
-               "SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = \
-                'checksum'"
-               table)
-        in
-        Db.find has_col () >>= function
-        | Error e -> Lwt.return_error e
-        | Ok 0 ->
-            Db.exec
-              ((unit ->. unit) ~oneshot:true
-                 (Printf.sprintf "ALTER TABLE %s ADD COLUMN checksum TEXT" table))
-              ()
-        | Ok _ -> Lwt_result.return ())
-  in
-  Db.exec ((unit ->. unit) ~oneshot:true create_ddl) () >>= function
-  | Error e -> Lwt.return_error e
-  | Ok () -> add_checksum_column ()
+  Db.exec ((unit ->. unit) ~oneshot:true create_ddl) ()
 
 (** Whether the migrations-tracking table already exists, without creating it.
     Used by read-only operations (status, dry-run plans) so they never alter the
@@ -214,10 +185,9 @@ let get_applied_records ?(table = default_table) (dialect : Dialect.t)
       Ok (List.map (fun (version, created_at) -> { version; created_at }) rows)
   | Error e -> Error e
 
-(** Get all applied (version, checksum) pairs, sorted chronologically.
-    [checksum] is [None] for rows recorded before checksums were tracked. *)
+(** Get all applied (version, checksum) pairs, sorted chronologically. *)
 let get_applied_checksums ?(table = default_table) (db : Types.db_conn) :
-    ((int64 * string option) list, [> Caqti_error.t ]) Lwt_result.t =
+    ((int64 * string) list, [> Caqti_error.t ]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   Db.collect_list (all_checksums_query table) ()
 
@@ -227,7 +197,7 @@ let get_latest_version ?(table = default_table) (db : Types.db_conn) :
   Db.find_opt (latest_query table) ()
 
 let add_migration ?(table = default_table) (db : Types.db_conn)
-    (version : int64) (checksum : string option) :
+    (version : int64) (checksum : string) :
     (unit, [> Caqti_error.t ]) Lwt_result.t =
   let module Db = (val db : Caqti_lwt.CONNECTION) in
   Db.exec (insert_query table) (version, checksum)
@@ -395,8 +365,7 @@ let run_migration ?(verbose = false) ?(table = default_table)
   | Ok (up_sql, checksum) ->
       run_in_transaction ~verbose
         ~read_sql:(fun _ -> Ok up_sql)
-        ~record:(fun db version ->
-          add_migration ~table db version (Some checksum))
+        ~record:(fun db version -> add_migration ~table db version checksum)
         ~action:"migration" db migration
 
 (** Run [step] over each item in order, accumulating results and stopping after
@@ -478,7 +447,6 @@ let run_pending ?(verbose = false) ?(table = default_table) (db : Types.db_conn)
 (** Validate applied migrations against the files on disk:
     - a recorded version with no file -> [AppliedFileMissing]
     - a file whose checksum differs from the recorded one -> [ChecksumMismatch]
-      Rows recorded before checksums were tracked (NULL checksum) are skipped.
       Returns the first problem found, or [Ok ()] if all are consistent. *)
 let validate ?(table = default_table)
     ?(migrations_dir = Discovery.default_migrations_dir) (db : Types.db_conn) :
@@ -503,19 +471,15 @@ let validate ?(table = default_table)
                     Lwt.return_error
                       (Types.MigrationError (Types.AppliedFileMissing version))
                 | Some m -> (
-                    match stored with
-                    | None ->
-                        check rest (* pre-checksum row: nothing to compare *)
-                    | Some stored_cs -> (
-                        match Migration.checksum m with
-                        | Error err -> Lwt.return_error err
-                        | Ok cur ->
-                            if String.equal cur stored_cs then check rest
-                            else
-                              Lwt.return_error
-                                (Types.MigrationError
-                                   (Types.ChecksumMismatch
-                                      (version, m.Migration.file_path))))))
+                    match Migration.checksum m with
+                    | Error err -> Lwt.return_error err
+                    | Ok cur ->
+                        if String.equal cur stored then check rest
+                        else
+                          Lwt.return_error
+                            (Types.MigrationError
+                               (Types.ChecksumMismatch
+                                  (version, m.Migration.file_path)))))
           in
           check applied)
 

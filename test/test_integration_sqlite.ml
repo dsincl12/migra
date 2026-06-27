@@ -133,7 +133,8 @@ let test_sqlite_migration_operations () =
                   Alcotest.(check bool)
                     "Version not applied initially" false applied;
 
-                  Migra.Runner.add_migration db version None >>= function
+                  Migra.Runner.add_migration db version "test-checksum"
+                  >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "add_migration failed: %s"
@@ -178,7 +179,7 @@ let test_sqlite_get_records () =
           | Ok () -> (
               let version = 20240115120000L in
 
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -223,9 +224,9 @@ let test_sqlite_latest_version () =
                   let v2 = 20240115120000L in
                   let v3 = 20240116150000L in
 
-                  Migra.Runner.add_migration db v2 None >>= fun _ ->
-                  Migra.Runner.add_migration db v1 None >>= fun _ ->
-                  Migra.Runner.add_migration db v3 None >>= fun _ ->
+                  Migra.Runner.add_migration db v2 "test-checksum" >>= fun _ ->
+                  Migra.Runner.add_migration db v1 "test-checksum" >>= fun _ ->
+                  Migra.Runner.add_migration db v3 "test-checksum" >>= fun _ ->
                   Migra.Runner.get_latest_version db >>= function
                   | Error err ->
                       Alcotest.fail
@@ -247,7 +248,7 @@ let test_sqlite_memory_basic () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -300,7 +301,7 @@ let test_sqlite_memory_persistence () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -352,7 +353,7 @@ let test_sqlite_timestamp_conversion () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"

@@ -239,7 +239,8 @@ let test_mariadb_migration_operations () =
                   Alcotest.(check bool)
                     "Version not applied initially" false applied;
 
-                  Migra.Runner.add_migration db version None >>= function
+                  Migra.Runner.add_migration db version "test-checksum"
+                  >>= function
                   | Error err ->
                       Alcotest.fail
                         (Printf.sprintf "add_migration failed: %s"
@@ -284,7 +285,7 @@ let test_mariadb_get_records () =
           | Ok () -> (
               let version = 20240115120000L in
 
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -329,9 +330,9 @@ let test_mariadb_latest_version () =
                   let v2 = 20240115120000L in
                   let v3 = 20240116150000L in
 
-                  Migra.Runner.add_migration db v2 None >>= fun _ ->
-                  Migra.Runner.add_migration db v1 None >>= fun _ ->
-                  Migra.Runner.add_migration db v3 None >>= fun _ ->
+                  Migra.Runner.add_migration db v2 "test-checksum" >>= fun _ ->
+                  Migra.Runner.add_migration db v1 "test-checksum" >>= fun _ ->
+                  Migra.Runner.add_migration db v3 "test-checksum" >>= fun _ ->
                   Migra.Runner.get_latest_version db >>= function
                   | Error err ->
                       Alcotest.fail
@@ -356,9 +357,9 @@ let test_mariadb_get_applied_versions_sorted () =
               let v2 = 20240114100000L in
               let v3 = 20240116150000L in
 
-              Migra.Runner.add_migration db v2 None >>= fun _ ->
-              Migra.Runner.add_migration db v3 None >>= fun _ ->
-              Migra.Runner.add_migration db v1 None >>= fun _ ->
+              Migra.Runner.add_migration db v2 "test-checksum" >>= fun _ ->
+              Migra.Runner.add_migration db v3 "test-checksum" >>= fun _ ->
+              Migra.Runner.add_migration db v1 "test-checksum" >>= fun _ ->
               Migra.Runner.get_applied_versions db >>= function
               | Error err ->
                   Alcotest.fail
@@ -385,7 +386,7 @@ let test_mariadb_timestamp_conversion () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -416,13 +417,14 @@ let test_mariadb_duplicate_migration_fails () =
                    (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "First add_migration failed: %s"
                        (Caqti_error.show err))
               | Ok () -> (
-                  Migra.Runner.add_migration db version None >>= function
+                  Migra.Runner.add_migration db version "test-checksum"
+                  >>= function
                   | Ok () ->
                       Alcotest.fail
                         "Expected duplicate insert to fail, but it succeeded"

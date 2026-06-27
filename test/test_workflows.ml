@@ -536,7 +536,7 @@ let test_checksum_validation () =
               | Ok _ -> (
                   Migra.Runner.get_applied_checksums db >>= fun cks ->
                   (match cks with
-                  | Ok [ (v, Some _) ] when Int64.equal v v1 -> ()
+                  | Ok [ (v, cs) ] when Int64.equal v v1 && cs <> "" -> ()
                   | _ ->
                       Alcotest.fail
                         "expected one applied migration with a checksum");

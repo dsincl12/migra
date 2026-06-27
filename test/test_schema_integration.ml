@@ -91,7 +91,7 @@ let test_is_applied_true () =
                 (Printf.sprintf "Initialize failed: %s" (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -138,9 +138,9 @@ let test_get_applied_versions_sorted () =
               let v2 = 20240114100000L in
               let v3 = 20240116150000L in
 
-              Migra.Runner.add_migration db v2 None >>= fun _ ->
-              Migra.Runner.add_migration db v3 None >>= fun _ ->
-              Migra.Runner.add_migration db v1 None >>= fun _ ->
+              Migra.Runner.add_migration db v2 "test-checksum" >>= fun _ ->
+              Migra.Runner.add_migration db v3 "test-checksum" >>= fun _ ->
+              Migra.Runner.add_migration db v1 "test-checksum" >>= fun _ ->
               Migra.Runner.get_applied_versions db >>= function
               | Error err ->
                   Alcotest.fail
@@ -186,7 +186,7 @@ let test_get_applied_records_with_timestamps () =
                 (Printf.sprintf "Initialize failed: %s" (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -218,7 +218,7 @@ let test_add_migration_success () =
                 (Printf.sprintf "Initialize failed: %s" (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "add_migration failed: %s"
@@ -244,13 +244,14 @@ let test_add_migration_duplicate_fails () =
                 (Printf.sprintf "Initialize failed: %s" (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= function
+              Migra.Runner.add_migration db version "test-checksum" >>= function
               | Error err ->
                   Alcotest.fail
                     (Printf.sprintf "First add_migration failed: %s"
                        (Caqti_error.show err))
               | Ok () -> (
-                  Migra.Runner.add_migration db version None >>= function
+                  Migra.Runner.add_migration db version "test-checksum"
+                  >>= function
                   | Ok () ->
                       Alcotest.fail
                         "Expected duplicate insert to fail, but it succeeded"
@@ -266,7 +267,7 @@ let test_remove_migration_success () =
                 (Printf.sprintf "Initialize failed: %s" (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= fun _ ->
+              Migra.Runner.add_migration db version "test-checksum" >>= fun _ ->
               Migra.Runner.remove_migration db version >>= function
               | Error err ->
                   Alcotest.fail
@@ -328,7 +329,7 @@ let test_get_latest_version_some () =
                 (Printf.sprintf "Initialize failed: %s" (Caqti_error.show err))
           | Ok () -> (
               let version = 20240115120000L in
-              Migra.Runner.add_migration db version None >>= fun _ ->
+              Migra.Runner.add_migration db version "test-checksum" >>= fun _ ->
               Migra.Runner.get_latest_version db >>= function
               | Error err ->
                   Alcotest.fail
@@ -352,9 +353,9 @@ let test_get_latest_version_highest () =
               let v2 = 20240114100000L in
               let v3 = 20240116150000L in
 
-              Migra.Runner.add_migration db v2 None >>= fun _ ->
-              Migra.Runner.add_migration db v1 None >>= fun _ ->
-              Migra.Runner.add_migration db v3 None >>= fun _ ->
+              Migra.Runner.add_migration db v2 "test-checksum" >>= fun _ ->
+              Migra.Runner.add_migration db v1 "test-checksum" >>= fun _ ->
+              Migra.Runner.add_migration db v3 "test-checksum" >>= fun _ ->
               Migra.Runner.get_latest_version db >>= function
               | Error err ->
                   Alcotest.fail
